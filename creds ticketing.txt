@@ -1,0 +1,38 @@
+Updated in ticketing
+1. Technician
+Removed/hide - (Only on technicians)
+- User 
+- Evaluation 
+- Technicians
+
+2. Superadmin(See all)
+
+3. User
+Pagreate lang ticket 
+at makita lang ang ticket
+Removed/hide - (Only on technicians)
+- User 
+- Evaluation 
+- Technicians
+
+Credentials
+super admin
+username:sheldon.laxa@gmail.com
+password:Pepsipopcola#21
+
+admin
+username: ajmojar24@gmail.com
+password: admin12345_98
+
+User
+username: prof@gmail.com
+password: clientprof_26
+
+technician
+username: dayritaaron13@gmail.com
+password: technicianaaron_13
+
+
+They cant' access this
+http://localhost/ticketing/user/users/technicians.php
+http://localhost/ticketing/user/users/clients.php
