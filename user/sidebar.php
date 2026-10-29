@@ -1,6 +1,21 @@
 <?php
 date_default_timezone_set('Asia/Manila');
 
+function sidebarLinkIsCurrent($href)
+{
+    $currentPath = realpath($_SERVER['SCRIPT_FILENAME']);
+    $linkPath = parse_url($href, PHP_URL_PATH);
+    $targetPath = $linkPath ? realpath(dirname($currentPath) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $linkPath)) : false;
+
+    return $currentPath && $targetPath && $currentPath === $targetPath;
+}
+
+$usersMenuIsActive = sidebarLinkIsCurrent('../users/clients.php')
+    || sidebarLinkIsCurrent('../users/admins.php')
+    || sidebarLinkIsCurrent('../users/list.php');
+$settingsMenuIsActive = sidebarLinkIsCurrent('../settings/my-profile.php')
+    || sidebarLinkIsCurrent('../settings/ticket-category.php');
+
 $query = "SELECT * FROM users WHERE user_id = $user_id";
 $result = mysqli_query($con, $query);
 if (mysqli_num_rows($result) > 0) {
@@ -44,41 +59,32 @@ if (mysqli_num_rows($result) > 0) {
       <nav class="menu open-current-submenu">
         <ul>
           <li class="menu-header"><span> GENERAL </span></li>
-          <li class="menu-item">
-            <a href="../dashboard/dashboard.php">
+          <li class="menu-item<?= sidebarLinkIsCurrent('../dashboard/dashboard.php') ? ' active' : '' ?>">
+            <a href="../dashboard/dashboard.php"<?= sidebarLinkIsCurrent('../dashboard/dashboard.php') ? ' aria-current="page"' : '' ?>>
               <span class="menu-icon">
                 <i class="ri-dashboard-horizontal-fill"></i>
               </span>
               <span class="menu-title">Dashboard</span>
             </a>
           </li>
-          <li class="menu-item">
-            <a href="../projects/list.php">
+          <li class="menu-item<?= sidebarLinkIsCurrent('../projects/list.php') ? ' active' : '' ?>">
+            <a href="../projects/list.php"<?= sidebarLinkIsCurrent('../projects/list.php') ? ' aria-current="page"' : '' ?>>
               <span class="menu-icon">
                 <i class="ri-server-line"></i>
               </span>
               <span class="menu-title">Projects</span>
             </a>
           </li>
-          <li class="menu-item">
-            <a href="../tickets/list.php">
-              <span class="menu-icon">
-                <i class="ri-aed-electrodes-line"></i>
-              </span>
-              <span class="menu-title">Tickets</span>
-            </a>
-          </li>
-
           <!-- SHOW ONLY FOR ADMIN / SUPER_ADMIN -->
           <?php if ($user_role != 'client' && $user_role != 'technician') { ?>
-            <li class="menu-item">
-              <a href="../users/technicians.php">
+            <li class="menu-item<?= sidebarLinkIsCurrent('../users/technicians.php') ? ' active' : '' ?>">
+              <a href="../users/technicians.php"<?= sidebarLinkIsCurrent('../users/technicians.php') ? ' aria-current="page"' : '' ?>>
                 <span class="menu-icon"><i class="ri-user-settings-line"></i></span>
                 <span class="menu-title">Technicians</span>
               </a>
             </li>
 
-            <li class="menu-item sub-menu">
+            <li class="menu-item sub-menu<?= $usersMenuIsActive ? ' active open' : '' ?>">
               <a href="#">
                 <span class="menu-icon">
                   <i class="ri-group-line"></i>
@@ -87,18 +93,18 @@ if (mysqli_num_rows($result) > 0) {
               </a>
               <div class="sub-menu-list">
                 <ul>
-                  <li class="menu-item">
-                    <a href="../users/clients.php">
+                  <li class="menu-item<?= sidebarLinkIsCurrent('../users/clients.php') ? ' active' : '' ?>">
+                    <a href="../users/clients.php"<?= sidebarLinkIsCurrent('../users/clients.php') ? ' aria-current="page"' : '' ?>>
                       <span class="menu-title"><span class="menu-icon"><i class="ri-account-pin-circle-line"></i></span>&nbsp;Clients</span>
                     </a>
                   </li>
-                  <li class="menu-item">
-                    <a href="../users/admins.php">
+                  <li class="menu-item<?= sidebarLinkIsCurrent('../users/admins.php') ? ' active' : '' ?>">
+                    <a href="../users/admins.php"<?= sidebarLinkIsCurrent('../users/admins.php') ? ' aria-current="page"' : '' ?>>
                       <span class="menu-title"><span class="menu-icon"><i class="ri-admin-line"></i></span>&nbsp;Admins</span>
                     </a>
                   </li>
-                  <li class="menu-item">
-                    <a href="../users/list.php">
+                  <li class="menu-item<?= sidebarLinkIsCurrent('../users/list.php') ? ' active' : '' ?>">
+                    <a href="../users/list.php"<?= sidebarLinkIsCurrent('../users/list.php') ? ' aria-current="page"' : '' ?>>
                       <span class="menu-title"><span class="menu-icon"><i class="ri-group-line"></i></span>&nbsp;All Users</span>
                     </a>
                   </li>
@@ -106,8 +112,8 @@ if (mysqli_num_rows($result) > 0) {
               </div>
             </li>
 
-            <li class="menu-item">
-              <a href="../evaluations/list.php">
+            <li class="menu-item<?= sidebarLinkIsCurrent('../evaluations/list.php') ? ' active' : '' ?>">
+              <a href="../evaluations/list.php"<?= sidebarLinkIsCurrent('../evaluations/list.php') ? ' aria-current="page"' : '' ?>>
                 <span class="menu-icon"><i class="ri-survey-line"></i></span>
                 <span class="menu-title">Evaluations</span>
               </a>
@@ -117,7 +123,7 @@ if (mysqli_num_rows($result) > 0) {
 
           <li class="menu-header" style="padding-top: 20px"><span> OTHERS </span></li>
 
-          <li class="menu-item sub-menu">
+          <li class="menu-item sub-menu<?= $settingsMenuIsActive ? ' active open' : '' ?>">
             <a href="#">
               <span class="menu-icon">
                 <i class="ri-settings-fill"></i>
@@ -127,8 +133,8 @@ if (mysqli_num_rows($result) > 0) {
             <div class="sub-menu-list">
               <ul>
                 <?php if ($user_role != 'super_admin') { ?>
-                  <li class="menu-item">
-                    <a href="../settings/my-profile.php">
+                  <li class="menu-item<?= sidebarLinkIsCurrent('../settings/my-profile.php') ? ' active' : '' ?>">
+                    <a href="../settings/my-profile.php"<?= sidebarLinkIsCurrent('../settings/my-profile.php') ? ' aria-current="page"' : '' ?>>
                       <span class="menu-icon">
                         <i class="ri-profile-line"></i>
                       </span>
@@ -138,8 +144,8 @@ if (mysqli_num_rows($result) > 0) {
                 <?php } ?>
 
                 <?php if ($user_role == 'admin' || $user_role == 'super_admin') { ?>
-                  <li class="menu-item">
-                    <a href="../settings/ticket-category.php">
+                  <li class="menu-item<?= sidebarLinkIsCurrent('../settings/ticket-category.php') ? ' active' : '' ?>">
+                    <a href="../settings/ticket-category.php"<?= sidebarLinkIsCurrent('../settings/ticket-category.php') ? ' aria-current="page"' : '' ?>>
                       <span class="menu-icon">
                         <i class="ri-list-indefinite"></i>
                       </span>
@@ -165,3 +171,7 @@ if (mysqli_num_rows($result) > 0) {
   </div>
 </aside>
 <div id="overlay" class="overlay"></div>
+<?php
+require_once __DIR__ . '/../includes/page_breadcrumbs.php';
+renderPageBreadcrumbs('user');
+?>

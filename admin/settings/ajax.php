@@ -2,7 +2,17 @@
 include("../../includes/connections.php");
 session_start();
 
-$user_id = $_SESSION['user_id'];
+if (empty($_SESSION['logged_in']) || (int) ($_SESSION['user_id'] ?? 0) < 1) {
+  http_response_code(401);
+  exit('Authentication required.');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && (!isset($_POST['csrf_token'], $_SESSION['csrf_token'])
+      || !hash_equals($_SESSION['csrf_token'], (string) $_POST['csrf_token']))) {
+  http_response_code(403);
+  exit('Invalid security token.');
+}
+$user_id = (int) $_SESSION['user_id'];
 
 if (isset($_POST['update-my-profile'])) {
  
@@ -113,7 +123,11 @@ if (isset($_POST['update-my-profile'])) {
     $subject = "Verification Code";
     $message = getName($n);
     $new_email = $email;
-    include("send.php");
+    if (!include("send.php")) {
+      http_response_code(500);
+      echo json_encode(['status' => 154, 'message' => 'Unable to send the verification email.']);
+      exit;
+    }
 
 
     $queryCode = "UPDATE users set verification_code = '$message' where user_id = '$user_id'";

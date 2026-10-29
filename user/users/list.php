@@ -2,6 +2,11 @@
 include("../../includes/connections.php");
 session_start();
 
+if (empty($_SESSION['csrf_token'])) {
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
 if (!empty($_SESSION['logged_in'])) {
  
 } else {
@@ -520,7 +525,8 @@ if (isset($_GET['list'])) {
               data: {
                 email: email,
                 subject: subject,
-                message: message
+                message: message,
+                csrf_token: <?= json_encode($csrf_token) ?>
               },
               success: function(response) {},
               error: function(xhr, status, error) {

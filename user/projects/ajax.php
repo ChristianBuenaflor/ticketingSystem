@@ -6,7 +6,7 @@ include("../../includes/connections.php");
 $user_role = $_SESSION['role'] ?? '';
 $user_id = (int) ($_SESSION['user_id'] ?? 0);
 
-if (isset($_GET['shareusers']) || isset($_POST['share-project'])) {
+if (isset($_GET['shareusers']) || isset($_POST['share-project']) || isset($_POST['unshare-project'])) {
   $project_id = (int) ($_GET['shareusers'] ?? $_POST['project_id'] ?? 0);
   $can_manage_projects = in_array($user_role, ['admin', 'super_admin'], true);
   $project_check = mysqli_query($con, "SELECT project_id FROM projects WHERE project_id = $project_id");
@@ -96,6 +96,36 @@ if (isset($_GET['shareusers']) || isset($_POST['share-project'])) {
     }
   }
 
+  if (isset($_POST['unshare-project'])) {
+    $share_user_id = (int) ($_POST['share_user_id'] ?? 0);
+    if ($share_user_id <= 0) {
+      http_response_code(400);
+      echo json_encode(['status' => 400, 'message' => 'Select a valid user to remove.']);
+      exit;
+    }
+
+    $stmt = mysqli_prepare($con, "DELETE FROM project_shares WHERE project_id = ? AND user_id = ?");
+    if (!$stmt) {
+      http_response_code(500);
+      echo json_encode(['status' => 500, 'message' => 'Unable to remove project sharing.']);
+      exit;
+    }
+    mysqli_stmt_bind_param($stmt, 'ii', $project_id, $share_user_id);
+    if (!mysqli_stmt_execute($stmt)) {
+      mysqli_stmt_close($stmt);
+      http_response_code(500);
+      echo json_encode(['status' => 500, 'message' => 'Unable to remove project sharing.']);
+      exit;
+    }
+    $removed = mysqli_stmt_affected_rows($stmt) > 0;
+    mysqli_stmt_close($stmt);
+    if (!$removed) {
+      http_response_code(404);
+      echo json_encode(['status' => 404, 'message' => 'This user is not currently shared on the project.']);
+      exit;
+    }
+  }
+
   $users = [];
   $user_query = mysqli_query($con, "SELECT users.user_id, users.role, users.email,
       users_info.first_name, users_info.last_name
@@ -122,7 +152,7 @@ if (isset($_GET['shareusers']) || isset($_POST['share-project'])) {
 
   $shared = [];
   $shared_query = mysqli_query($con, "SELECT users.user_id, users.role, users.email,
-      users_info.first_name, users_info.last_name
+      users_info.first_name, users_info.last_name, users_info.profile, users_info.profile_type
     FROM project_shares
     INNER JOIN users ON users.user_id = project_shares.user_id
     LEFT JOIN users_info ON users_info.user_id = users.user_id
@@ -134,10 +164,18 @@ if (isset($_GET['shareusers']) || isset($_POST['share-project'])) {
     exit;
   }
   while ($row = mysqli_fetch_assoc($shared_query)) {
+    $account_profile = $row['profile'] ?? '';
+    $account_profile_type = $row['profile_type'] ?? '';
+    if (empty($account_profile)) {
+      $account_profile = file_get_contents('images/Default_pfp.png');
+      $account_profile_type = 'image/png';
+    }
     $shared[] = [
       'user_id' => (int) $row['user_id'],
       'role' => $row['role'],
       'name' => trim($row['first_name'] . ' ' . $row['last_name']) ?: $row['email'],
+      'profile' => base64_encode($account_profile),
+      'profile_type' => $account_profile_type ?: 'image/png',
     ];
   }
 
@@ -745,34 +783,6 @@ if (isset($_GET['previewid'])) {
       $task_poster_name = 'Deleted Account';
     }
 
-    $shared_accounts = [];
-    $shared_accounts_query = mysqli_query($con, "SELECT users.email, users_info.first_name, users_info.last_name,
-        users_info.profile, users_info.profile_type
-      FROM project_shares
-      INNER JOIN users ON users.user_id = project_shares.user_id
-      LEFT JOIN users_info ON users_info.user_id = users.user_id
-      WHERE project_shares.project_id = $project_id
-      ORDER BY users_info.first_name, users.email");
-    if (!$shared_accounts_query) {
-      http_response_code(500);
-      echo json_encode(['status' => 500, 'message' => 'Unable to load shared accounts.']);
-      return false;
-    }
-    while ($shared_account = mysqli_fetch_assoc($shared_accounts_query)) {
-      $account_profile = $shared_account['profile'] ?? '';
-      $account_profile_type = $shared_account['profile_type'] ?? '';
-      if (empty($account_profile)) {
-        $account_profile = file_get_contents('images/Default_pfp.png');
-        $account_profile_type = 'image/png';
-      }
-      $shared_accounts[] = [
-        'name' => trim(($shared_account['first_name'] ?? '') . ' ' . ($shared_account['last_name'] ?? ''))
-          ?: $shared_account['email'],
-        'profile' => base64_encode($account_profile),
-        'profile_type' => $account_profile_type ?: 'image/png',
-      ];
-    }
-
     $task_files = $row['files'];
     if (!empty($task_files)) {
 
@@ -886,7 +896,6 @@ if (isset($_GET['previewid'])) {
       'pTaskFiles' => $file_details,
       'pTaskComments' => $comments,
       'taskDescription' => $taskDescription,
-      'sharedAccounts' => $shared_accounts,
     ];
 
     echo json_encode($res);

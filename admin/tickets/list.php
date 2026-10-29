@@ -2,9 +2,15 @@
 include("../../includes/connections.php");
 session_start();
 
+if (empty($_SESSION['csrf_token'])) {
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
 if (!empty($_SESSION['logged_in'])) {
   if($_SESSION['role'] != 'super_admin'){
     header("location:../../user/dashboard/dashboard.php");
+    exit;
   }
 } else {
     header("location:../../index.php");
@@ -208,6 +214,7 @@ if($userRole == 'super_admin'){
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <form id='post-ticket' enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="user_id" value="<?= $user_id ?>">
           <input type="hidden" name="m_ticketId" id="m_ticketId">
           <div class="modal-body">

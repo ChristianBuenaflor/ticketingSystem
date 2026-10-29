@@ -77,10 +77,12 @@ if ($zip_path === false || $zip->open($zip_path, ZipArchive::OVERWRITE) !== true
 
 foreach ($file_ids as $file_id) {
     $file = $download_files[$file_id];
-    $file_path = '../../files/' . $file['folder'] . '/' . $file['file_name'];
+    $file_path = __DIR__ . '/../../files/' . $file['folder'] . '/' . $file['file_name'];
     if (!is_file($file_path) || !$zip->addFile($file_path, $file['file_name'])) {
         $zip->close();
-        unlink($zip_path);
+        if (is_file($zip_path)) {
+            unlink($zip_path);
+        }
         http_response_code(500);
         exit('Unable to add a file to the download archive.');
     }

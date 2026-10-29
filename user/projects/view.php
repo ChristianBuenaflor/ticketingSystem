@@ -432,6 +432,17 @@ if (isset($_GET['project'])) {
             white-space: nowrap;
         }
 
+        .project-share-name {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .remove-project-share {
+            min-width: 44px;
+            min-height: 44px;
+            flex-shrink: 0;
+        }
+
 
         img.attached-files {
             width: 406px;
@@ -623,9 +634,33 @@ if (isset($_GET['project'])) {
             width: 100%;
         }
 
+        .task-attachment {
+            min-width: 0;
+            padding: 10px;
+            border: 1px solid #e1e6eb;
+            border-radius: 8px;
+            background: #fff;
+        }
+
         .task-attachment-name {
-            display: block;
-            overflow-wrap: anywhere;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            white-space: nowrap;
+        }
+
+        .task-attachment-name span {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .task-attachment-icon {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            object-fit: contain;
         }
 
         .task-preview-conversation .downloadFilesBtn {
@@ -751,8 +786,11 @@ if (isset($_GET['project'])) {
 
 
                 <div class="row mt-4 card shadow-sm">
-                    <div class="card-header d-flex" style="justify-content: space-between;">
-                        <h6 style="padding: 12px 0px"><i class="ri-server-line"></i> <?= $project_title ?></h6>
+                    <div class="card-header d-flex align-items-center" style="justify-content: space-between;">
+                        <div>
+                            <h6 style="padding: 12px 0px; margin-bottom:0"><i class="ri-server-line"></i> <?= $project_title ?></h6>
+                            <button type="button" class="task-shared-accounts-trigger" id="projectSharedAccountsButton" data-bs-toggle="popover" aria-label="Show shared accounts" hidden></button>
+                        </div>
                         <button type="button" class="btn share-icon" data-bs-toggle="modal" data-bs-target="#shareProjectM" aria-label="Share project">
                             <i class="ri-share-box-line"></i> Share With
                         </button>
@@ -1856,10 +1894,6 @@ if (isset($_GET['project'])) {
                         <div class="task-project mb-1">
                             <b>Project: </b><span id="ptaskProject">SNL Virutal partner Backup for may 2024</span>
                         </div>
-                        <div class="mt-2">
-                            <button type="button" class="task-shared-accounts-trigger" id="taskSharedAccountsButton" data-bs-toggle="popover" aria-label="Show shared accounts">
-                            </button>
-                        </div>
                         </section>
 
                         <section class="task-preview-conversation" aria-label="Comments and attachments">
@@ -2741,14 +2775,23 @@ if (isset($_GET['project'])) {
                         src: fileUrl,
                         alt: file.file_name
                     })).appendTo(attachment);
+                } else {
+                    $('<img>', {
+                        class: 'task-attachment-icon',
+                        src: getFileIcon(file.file_type),
+                        alt: ''
+                    }).appendTo(attachment);
                 }
 
-                $('<a>', {
+                var fileLink = $('<a>', {
                     class: 'task-attachment-name files',
                     href: fileUrl,
                     target: '_blank',
-                    rel: 'noopener'
-                }).text(file.file_name).appendTo(attachment);
+                    rel: 'noopener',
+                    title: file.file_name
+                });
+                $('<span>').text(file.file_name).appendTo(fileLink);
+                fileLink.appendTo(attachment);
 
                 attachmentList.append(attachment);
             });
@@ -2807,7 +2850,6 @@ if (isset($_GET['project'])) {
                         var fileUrl = '../../files/task/' + encodeURIComponent(file.file_name);
                         var safeFileName = $('<span>').text(file.file_name).html();
                         commentHtml += `<a target="_blank" rel="noopener" class="files" href="${fileUrl}">${safeFileName}</a><br>`;
-
                     }
                 });
 
@@ -2886,50 +2928,6 @@ if (isset($_GET['project'])) {
                     $('#ptaskStatus').text(res.data.status);
                     $('#previewTaskLabel').text(res.pId);
                     $('#ptaskProject').text(res.project_title);
-                    var sharedAccounts = Array.isArray(res.sharedAccounts) ? res.sharedAccounts : [];
-                    var sharedAccountsButton = document.getElementById('taskSharedAccountsButton');
-                    var sharedAccountsPopover = bootstrap.Popover.getInstance(sharedAccountsButton);
-                    if (sharedAccountsPopover) {
-                        sharedAccountsPopover.dispose();
-                    }
-                    var sharedAccountsButtonContent = $('#taskSharedAccountsButton').empty();
-                    var sharedAccountsContent = $('<div>');
-                    sharedAccounts.forEach(function(account, index) {
-                        var profileType = /^[\w.+-]+\/[\w.+-]+$/.test(account.profile_type) ? account.profile_type : 'image/png';
-                        var profileSource = 'data:' + profileType + ';base64,' + account.profile;
-                        if (index < 3) {
-                            $('<img>', {
-                                class: 'task-shared-account-avatar',
-                                src: profileSource,
-                                alt: '',
-                                title: account.name
-                            }).appendTo(sharedAccountsButtonContent);
-                        }
-                        $('<div>', { class: 'task-shared-account-row' })
-                            .append($('<img>', {
-                                class: 'task-shared-account-avatar',
-                                src: profileSource,
-                                alt: ''
-                            }))
-                            .append($('<span>').text(account.name))
-                            .appendTo(sharedAccountsContent);
-                    });
-                    if (sharedAccounts.length > 3) {
-                        $('<span>', {
-                            class: 'task-shared-account-count',
-                            text: '+' + (sharedAccounts.length - 3),
-                            'aria-label': (sharedAccounts.length - 3) + ' more shared accounts'
-                        }).appendTo(sharedAccountsButtonContent);
-                    }
-                    sharedAccountsButtonContent.toggle(sharedAccounts.length > 0);
-                    sharedAccountsButton.setAttribute('aria-label', sharedAccounts.length + ' shared accounts. Show names.');
-                    new bootstrap.Popover(sharedAccountsButton, {
-                        title: sharedAccounts.length ? 'Shared accounts' : '',
-                        content: sharedAccountsContent[0],
-                        html: true,
-                        trigger: 'focus',
-                        placement: 'bottom'
-                    });
                     var profilePictureDataURI = 'data:image/*;base64,' + res.profiles;
                     $('#ptaskProfilePicture').attr('src', profilePictureDataURI);
 
@@ -3208,7 +3206,6 @@ if (isset($_GET['project'])) {
                 comment.commenter_files.forEach(function(file) {
                     if (!file.file_type.startsWith('image/')) {
                         commentHtml += `<a target="_blank" class="files" href="../../files/task/${file.file_name}">${file.file_name}</a><br>`;
-
                     }
                 });
 
@@ -4524,6 +4521,52 @@ console.log('aba aba');
                     return;
                 }
 
+                var sharedAccountsButton = document.getElementById('projectSharedAccountsButton');
+                var sharedAccountsPopover = bootstrap.Popover.getInstance(sharedAccountsButton);
+                if (sharedAccountsPopover) {
+                    sharedAccountsPopover.dispose();
+                }
+                var sharedAccountsButtonContent = $(sharedAccountsButton).empty();
+                var sharedAccountsContent = $('<div>');
+                response.shared.forEach(function(account, index) {
+                    var profileType = /^[\w.+-]+\/[\w.+-]+$/.test(account.profile_type) ? account.profile_type : 'image/png';
+                    var profileSource = 'data:' + profileType + ';base64,' + account.profile;
+                    if (index < 3) {
+                        $('<img>', {
+                            class: 'task-shared-account-avatar',
+                            src: profileSource,
+                            alt: '',
+                            title: account.name
+                        }).appendTo(sharedAccountsButtonContent);
+                    }
+                    $('<div>', { class: 'task-shared-account-row' })
+                        .append($('<img>', {
+                            class: 'task-shared-account-avatar',
+                            src: profileSource,
+                            alt: ''
+                        }))
+                        .append($('<span>').text(account.name))
+                        .appendTo(sharedAccountsContent);
+                });
+                if (response.shared.length > 3) {
+                    $('<span>', {
+                        class: 'task-shared-account-count',
+                        text: '+' + (response.shared.length - 3),
+                        'aria-label': (response.shared.length - 3) + ' more shared accounts'
+                    }).appendTo(sharedAccountsButtonContent);
+                }
+                sharedAccountsButton.hidden = response.shared.length === 0;
+                sharedAccountsButton.setAttribute('aria-label', response.shared.length + ' shared accounts. Show names.');
+                if (response.shared.length) {
+                    new bootstrap.Popover(sharedAccountsButton, {
+                        title: 'Shared accounts',
+                        content: sharedAccountsContent[0],
+                        html: true,
+                        trigger: 'focus',
+                        placement: 'bottom'
+                    });
+                }
+
                 var select = $('#shareUserSelect').empty();
                 response.users.forEach(function(user) {
                     select.append($('<option>').val(user.user_id).text(user.name + ' (' + user.role + ')'));
@@ -4537,7 +4580,18 @@ console.log('aba aba');
                 }
 
                 response.shared.forEach(function(user) {
-                    list.append($('<div class="small">').text(user.name + ' (' + user.role + ')'));
+                    var entry = $('<div>', {
+                        class: 'd-flex align-items-center justify-content-between gap-2 py-1 border-bottom'
+                    });
+                    entry.append($('<span class="small project-share-name">').text(user.name + ' (' + user.role + ')'));
+                    entry.append($('<button>', {
+                        type: 'button',
+                        class: 'btn btn-outline-danger removeProjectShare remove-project-share',
+                        text: 'Remove',
+                        'aria-label': 'Remove sharing with ' + user.name,
+                        'data-user-id': user.user_id
+                    }));
+                    list.append(entry);
                 });
             }).fail(function() {
                 $('#projectShareList').text('Unable to load sharing information.');
@@ -4545,6 +4599,26 @@ console.log('aba aba');
         }
 
         $('#shareProjectM').on('show.bs.modal', loadProjectShares);
+        loadProjectShares();
+        $('#projectShareList').on('click', '.removeProjectShare', function() {
+            var button = $(this).prop('disabled', true).text('Removing...');
+            $.post('ajax.php', {
+                'unshare-project': true,
+                project_id: projectId,
+                share_user_id: button.attr('data-user-id')
+            }, function(response) {
+                if (response.status === 200) {
+                    loadProjectShares();
+                    showShareToast('Project sharing removed.');
+                } else {
+                    button.prop('disabled', false).text('Remove');
+                    showShareToast(response.message || 'Unable to remove project sharing.', true);
+                }
+            }, 'json').fail(function() {
+                button.prop('disabled', false).text('Remove');
+                showShareToast('Unable to remove project sharing.', true);
+            });
+        });
         $('#addProjectShare').on('click', function() {
             var userIds = shareSelect.val();
             if (!userIds || !userIds.length) {
@@ -4566,6 +4640,19 @@ console.log('aba aba');
                 showShareToast('Unable to share this project.', true);
             });
         });
+    });
+</script>
+
+<script>
+    $(function() {
+        var taskId = <?= isset($_GET['task']) ? (int) $_GET['task'] : 0 ?>;
+        if (taskId) {
+            $('<button type="button" class="previewTaskM">')
+                .attr('data-task-id', taskId)
+                .appendTo('body')
+                .trigger('click')
+                .remove();
+        }
     });
 </script>
 

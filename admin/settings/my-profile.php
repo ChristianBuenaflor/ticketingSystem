@@ -2,6 +2,11 @@
 include("../../includes/connections.php");
 session_start();
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
 if (!empty($_SESSION['logged_in'])) {
     if($_SESSION['role'] != 'super_admin'){
       header("location:../../user/dashboard/dashboard.php");
@@ -230,6 +235,7 @@ if (mysqli_num_rows($resultPf) > 0) {
                 <div id="my-profile">
                     <!-- form -->
                     <form id="update-my-profile" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8') ?>">
                         <div class="refresh-my-profile">
                             <div class="row profile d-flex">
                                 <div class="col d-flex align-items-start gap-4">

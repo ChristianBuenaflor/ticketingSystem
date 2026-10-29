@@ -11,9 +11,22 @@ if (!empty($_SESSION['logged_in'])) {
 
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
+$isAdminDashboard = in_array($user_role, ['admin', 'super_admin'], true);
+$dashboardLinks = [
+  'projects' => '../projects/list.php',
+  'tickets' => '../tickets/list.php',
+  'clients' => '../users/clients.php',
+  'technicians' => '../users/technicians.php',
+  'admins' => '../users/admins.php',
+  'categories' => '../settings/ticket-category.php',
+  'profile' => '../settings/my-profile.php',
+];
 
-
-
+$projectCount = 0;
+$ticketCount = 0;
+$clientCount = 0;
+$technicianCount = 0;
+$adminCount = 0;
 if ($user_role == 'admin' || $user_role == 'super_admin') {
   $sql = "SELECT COUNT(project_id) AS projectCount FROM projects";
 } else {
@@ -26,7 +39,7 @@ $result = $con->query($sql);
 
 if ($result->num_rows > 0) {
     $row = $result->fetch_assoc();
-    $projectCount = $row['projectCount'];
+    $projectCount = (int) $row['projectCount'];
 }
 
 if($user_role == 'technician')
@@ -36,7 +49,7 @@ if($user_role == 'technician')
   
   if ($resultp->num_rows > 0) {
       $rowp = $resultp->fetch_assoc();
-      $ticketCount = $rowp['ticketCount'];
+      $ticketCount = (int) $rowp['ticketCount'];
   }
 }else if($user_role == 'client')
 {
@@ -45,7 +58,7 @@ if($user_role == 'technician')
   
   if ($resultp->num_rows > 0) {
       $rowp = $resultp->fetch_assoc();
-      $ticketCount = $rowp['ticketCount'];
+      $ticketCount = (int) $rowp['ticketCount'];
   }
 }else{
 
@@ -54,7 +67,7 @@ if($user_role == 'technician')
   
   if ($resulttech->num_rows > 0) {
       $rowtech = $resulttech->fetch_assoc();
-      $ticketCount = $rowtech['ticketCount'];
+      $ticketCount = (int) $rowtech['ticketCount'];
   }
 
 }
@@ -65,7 +78,7 @@ $resultu = $con->query($sqlu);
 
 if ($resultu->num_rows > 0) {
     $rowu = $resultu->fetch_assoc();
-    $clientCount = $rowu['clientCount'];
+    $clientCount = (int) $rowu['clientCount'];
 }
 
 $sqlt = "SELECT COUNT(user_id) AS technicianCount FROM users where role = 'technician'";
@@ -73,7 +86,7 @@ $resultt = $con->query($sqlt);
 
 if ($resultt->num_rows > 0) {
     $rowt = $resultt->fetch_assoc();
-    $technicianCount = $rowt['technicianCount'];
+    $technicianCount = (int) $rowt['technicianCount'];
 }
 
 $sqla = "SELECT COUNT(user_id) AS adminCount FROM users where role = 'admin'";
@@ -81,9 +94,59 @@ $resulta = $con->query($sqla);
 
 if ($resulta->num_rows > 0) {
     $rowa = $resulta->fetch_assoc();
-    $adminCount = $rowa['adminCount'];
+    $adminCount = (int) $rowa['adminCount'];
 }
 
+$taskStatusCounts = ['To do' => 0, 'In progress' => 0, 'Completed' => 0, 'Other' => 0];
+
+$taskQuery = 'SELECT projects_task.status, COUNT(*) AS total FROM projects_task';
+if (!$isAdminDashboard) {
+  $taskQuery .= " INNER JOIN project_shares ON project_shares.project_id = projects_task.project_id WHERE project_shares.user_id = $user_id";
+}
+$taskQuery .= ' GROUP BY projects_task.status';
+$taskStatusResult = mysqli_query($con, $taskQuery);
+if (!$taskStatusResult) {
+  throw new RuntimeException('Unable to load project task metrics.');
+}
+while ($row = mysqli_fetch_assoc($taskStatusResult)) {
+  $status = strtolower(trim($row['status']));
+  if ($status === 'to do') {
+    $taskStatusCounts['To do'] += (int) $row['total'];
+  } elseif ($status === 'in progress') {
+    $taskStatusCounts['In progress'] += (int) $row['total'];
+  } elseif ($status === 'completed') {
+    $taskStatusCounts['Completed'] += (int) $row['total'];
+  } else {
+    $taskStatusCounts['Other'] += (int) $row['total'];
+  }
+}
+$recentTasksQuery = "SELECT projects_task.task_id, projects_task.project_id, projects_task.task_title,
+    projects_task.status, projects_task.date_created, projects.project_title
+  FROM projects_task
+  INNER JOIN projects ON projects.project_id = projects_task.project_id";
+if (!$isAdminDashboard) {
+  $recentTasksQuery .= " INNER JOIN project_shares ON project_shares.project_id = projects_task.project_id
+    WHERE project_shares.user_id = $user_id";
+}
+$recentTasksQuery .= ' ORDER BY projects_task.task_id DESC LIMIT 6';
+$recentTasksResult = mysqli_query($con, $recentTasksQuery);
+if (!$recentTasksResult) {
+  throw new RuntimeException('Unable to load recent project tasks.');
+}
+$recentTasks = [];
+while ($row = mysqli_fetch_assoc($recentTasksResult)) {
+  $recentTasks[] = $row;
+}
+require_once __DIR__ . '/../../includes/recent_task_shares.php';
+$recentTaskShares = loadRecentTaskShares($con, $recentTasks);
+
+$dashboardCounts = [
+  'projects' => $projectCount,
+  'tickets' => $ticketCount,
+  'clients' => $clientCount,
+  'technicians' => $technicianCount,
+  'admins' => $adminCount,
+];
 
 
 
@@ -94,74 +157,9 @@ if ($resulta->num_rows > 0) {
   <meta charset="UTF-8">
   <title>Dashboard</title>
 <?php include("../header.php") ?>
-
-<style>
-
-
-
-.counter.animate {
-  animation: count 2s ease-out;
-}
-
-@keyframes count {
-  from { opacity: 0; transform: translateY(-20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-
-
-  .col.card.dash{
-  background-color: #f5ab2c;
-  color:#a60212;
-  text-align: end;
-  height:100px;
-  justify-content: end;
-  border: 0;
-  position: relative;
-}
-
-.col.card.dash i{
-  position: absolute;
-  font-size: 2.5rem;
-  top:0;
-  opacity: .7;
-}
-
-.col.card.dash:hover{
-background-color:#a60212;
-   color:#ffffff;
-  cursor: pointer;
-  box-shadow: 0 0px 10px 0px rgba(0, 0, 0, 0.05);
-}
-
-.col.card.dash2{
-background-color:#a60212;
-  color:#fff;
-  text-align: end;
-  height:100px;
-  justify-content: end;
-  border: 0;
-  position: relative;
-}
-
-.col.card.dash2:hover{
-background-color: #f5ab2c;
-  color:#a60212;
-  cursor: pointer;
-  box-shadow: 0 0px 10px 0px rgba(0, 0, 0, 0.05);
-}
-
-.col.card.dash2 i{
-  position: absolute;
-  font-size: 2.5rem;
-  top:0;
-  opacity: .7;
-}
-
-</style>
-
-</head>
-<body>
+<link rel="stylesheet" href="../../links/dashboard-admin.css">
+  </head>
+  <body class="admin-dashboard-page">
 <!-- partial:index.partial.html -->
 <div class="layout has-sidebar fixed-sidebar fixed-header">
       <?php include("../sidebar.php"); ?>
@@ -174,39 +172,7 @@ background-color: #f5ab2c;
             </a>
           </div>
 
-          <div class="row mt-4 gap-2">
-            <a href="../projects/list.php" class="col card dash">
-              <h6 class="counter" id="projectCount">0</h6>
-              <h5>Projects</h5>
-              <i class="ri-server-line"></i>
-            </a>
-            
-            <a href="../tickets/list.php" class="col card dash">
-            <h6 class="counter" id="ticketCount">0</h6>
-              <h5>Tickets</h5>
-              <i class="ri-aed-electrodes-line"></i>
-            </a>
-
-           <?php if ($user_role != 'technician' && $user_role != 'client') : ?>
-              <a href="../users/clients.php" class="col card dash2">
-                <h6 class="counter" id="clientCount">0</h6>
-                <h5>Clients</h5>
-                <i class="ri-group-line"></i>
-              </a>
-
-              <a href="../users/technicians.php" class="col card dash2">
-                <h6 class="counter" id="technicianCount">0</h6>
-                <h5>Technicians</h5>
-                <i class="ri-user-settings-line"></i>
-              </a>
-
-              <a href="../users/admins.php" class="col card dash2">
-                <h6 class="counter" id="adminCount">0</h6>
-                <h5>Admins</h5>
-                <i class="ri-admin-line"></i>
-              </a>
-            <?php endif; ?>
-          </div>
+          <?php include(__DIR__ . '/../../includes/admin_dashboard_widgets.php'); ?>
         
         
 
@@ -221,8 +187,9 @@ background-color: #f5ab2c;
 
 
           <div class="row mt-4 card shadow-sm">
-          <div class="card-header d-flex" style="justify-content: space-between; padding: 24px 12px; background-color:#a60212; color:#fff; border-radius:0">
-            <h6>Projects</h6>
+          <div class="card-header d-flex align-items-center" style="justify-content: space-between; padding: 20px 16px; background-color:<?= $isAdminDashboard ? '#fff' : '#a60212' ?>; color:<?= $isAdminDashboard ? '#092a2f' : '#fff' ?>; border-radius:0">
+            <h6><?= $isAdminDashboard ? 'Project overview' : 'Your projects' ?></h6>
+            <a class="dashboard-text-link" href="<?= htmlspecialchars($dashboardLinks['projects'], ENT_QUOTES, 'UTF-8') ?>">View projects <i class="ri-arrow-right-line" aria-hidden="true"></i></a>
              </div>
           <div class="card-body" id="project_results">
 
@@ -350,36 +317,6 @@ background-color: #f5ab2c;
 <script>
   $(document).ready(function() {
 
-
-  animateCounter('#projectCount',<?php echo json_encode($projectCount) ?>);
-  animateCounter('#ticketCount',<?php echo json_encode($ticketCount) ?>);
-  animateCounter('#clientCount',<?php echo json_encode($clientCount) ?>);
-  animateCounter('#technicianCount',<?php echo json_encode($technicianCount) ?>);
-  animateCounter('#adminCount',<?php echo json_encode($adminCount) ?>);
-
-  function animateCounter(selector, value) {
-    var element = $(selector);
-    var start = 0;
-    var end = value;
-    var duration = 2000; // Animation duration in milliseconds
-    var difference = end - start;
-    var step = Math.ceil(duration / difference);
-    var current = start;
-    var interval = setInterval(function() {
-      element.text(current);
-      current += 1; // Increment by 1
-      if (current >= end) {
-        element.text(end);
-        clearInterval(interval);
-      } 
-
-
-
-            }, step);
-    element.addClass('animate');
-          }
-
-          
   $('.table_display').DataTable({
                 "lengthMenu": [
                   [10, 25, 50, -1],

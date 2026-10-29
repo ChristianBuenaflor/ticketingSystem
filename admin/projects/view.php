@@ -3949,5 +3949,17 @@ if (isset($_GET['project'])) {
     }
 </script>
 
+<script>
+    $(function() {
+        var taskId = <?= isset($_GET['task']) ? (int) $_GET['task'] : 0 ?>;
+        if (taskId) {
+            $('<button type="button" class="previewTaskM">')
+                .attr('data-task-id', taskId)
+                .appendTo('body')
+                .trigger('click')
+                .remove();
+        }
+    });
+</script>
 
 </html>

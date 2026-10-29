@@ -2,25 +2,38 @@
 session_start();
 
 include("../../includes/connections.php");
+require_once("../../includes/ticket_upload.php");
 
 if (isset($_GET['action']) && $_GET['action'] == 'get_technicians' && isset($_GET['category_id'])) {
-    $category_id = mysqli_real_escape_string($con, $_GET['category_id']);
-    
-    $query = "SELECT u.user_id, ui.first_name, ui.last_name 
-              FROM users u 
-              JOIN users_info ui ON u.user_id = ui.user_id 
-              WHERE u.role = 'technician' 
-              AND ui.expertise = '$category_id'
-              ORDER BY ui.last_name";
-              
-    $result = mysqli_query($con, $query);
     $technicians = [];
-    
-    if (mysqli_num_rows($result) > 0) {  // Fixed: Added missing parenthesis and > 0
+    $categoryId = filter_var($_GET['category_id'], FILTER_VALIDATE_INT);
+    if (!$categoryId || $categoryId < 1) {
+        http_response_code(400);
+        echo json_encode(['status' => 400, 'message' => 'Invalid category.']);
+        exit;
+    }
+
+    $stmt = $con->prepare(
+        "SELECT u.user_id, ui.first_name, ui.last_name
+         FROM users u
+         JOIN users_info ui ON u.user_id = ui.user_id
+         WHERE u.role = 'technician' AND ui.expertise = ?
+         ORDER BY ui.last_name"
+    );
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to load technicians.']);
+        exit;
+    }
+    $stmt->bind_param('i', $categoryId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($result->num_rows > 0) {
         while ($row = mysqli_fetch_assoc($result)) {
             $technicians[] = $row;
         }
     }
+    $stmt->close();
     
     echo json_encode([
         'status' => 200,
@@ -29,32 +42,51 @@ if (isset($_GET['action']) && $_GET['action'] == 'get_technicians' && isset($_GE
     exit;
 }
 
-if (isset($_SESSION['user_id'])) {
-    $user_id = $_SESSION['user_id'];
-    $verified_check = mysqli_query($con, "SELECT verified FROM users WHERE user_id = '$user_id'");
-    
-    if ($verified_check && mysqli_num_rows($verified_check) > 0) {
-        $user_data = mysqli_fetch_assoc($verified_check);
-        if ($user_data['verified'] != 1 && $_SESSION['role'] == 'client') {
-            $res = [
-                'status' => 403,
-                'message' => 'Please verify your email before accessing the system'
-            ];
-            echo json_encode($res);
-            exit;
-        }
-    }
+if (empty($_SESSION['logged_in']) || (int) ($_SESSION['user_id'] ?? 0) < 1
+    || !in_array($_SESSION['role'] ?? '', ['admin', 'super_admin', 'client', 'technician'], true)) {
+    http_response_code(401);
+    echo json_encode(['status' => 401, 'message' => 'Authentication required.']);
+    exit;
 }
 
-$user_role = $_SESSION['role'];
-
+$authenticatedUserId = (int) $_SESSION['user_id'];
+$user_role = (string) $_SESSION['role'];
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && (!isset($_POST['csrf_token'], $_SESSION['csrf_token'])
+        || !hash_equals($_SESSION['csrf_token'], (string) $_POST['csrf_token']))) {
+    http_response_code(403);
+    echo json_encode(['status' => 403, 'message' => 'Invalid security token.']);
+    exit;
+}
 
 if (isset($_GET['updateid'])) {
-    $id = $_GET['updateid'];
-    $sql = "SELECT * FROM tickets WHERE ticket_id = $id";
-    $result = mysqli_query($con, $sql);
-    $row = mysqli_fetch_assoc($result);
+    $id = filter_var($_GET['updateid'], FILTER_VALIDATE_INT);
+    if (!$id || $id < 1) {
+        http_response_code(400);
+        echo json_encode(['status' => 400, 'message' => 'Invalid ticket ID.']);
+        exit;
+    }
+    $stmt = $con->prepare("SELECT * FROM tickets WHERE ticket_id = ?");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to load ticket.']);
+        exit;
+    }
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $stmt->close();
     if ($row) {
+        if (($user_role === 'client' && (int) $row['user_id'] !== $authenticatedUserId)
+            || ($user_role === 'technician' && (int) $row['technician'] !== $authenticatedUserId)) {
+            http_response_code(403);
+            echo json_encode(['status' => 403, 'message' => 'Forbidden.']);
+            exit;
+        }
 
         $res = [
             'status' => 200,
@@ -71,65 +103,122 @@ if (isset($_GET['updateid'])) {
 
 
 if (isset($_POST['post-ticket'])) {
-    // Add this verification check at the VERY TOP of the post-ticket block
-    $user_id = mysqli_real_escape_string($con, $_POST['user_id']);
-    $verified = mysqli_fetch_assoc(mysqli_query($con, "SELECT verified FROM users WHERE user_id = '$user_id'"));
-    
-    if ($verified['verified'] != 1) {
+    $user_id = $authenticatedUserId;
+    if ($user_role === 'client') {
+        $verifiedStmt = $con->prepare("SELECT verified FROM users WHERE user_id = ?");
+        if (!$verifiedStmt) {
+            http_response_code(500);
+            echo json_encode(['status' => 500, 'message' => 'Unable to verify account.']);
+            exit;
+        }
+        $verifiedStmt->bind_param('i', $user_id);
+        $verifiedStmt->execute();
+        $verified = $verifiedStmt->get_result()->fetch_assoc();
+        $verifiedStmt->close();
+        if (!$verified || (int) $verified['verified'] !== 1) {
+            http_response_code(403);
+            echo json_encode([
+                'status' => 403,
+                'message' => 'Please verify your email before creating tickets. Check your inbox or spam folder.'
+            ]);
+            exit;
+        }
+    }
+
+    if (!in_array($user_role, ['client', 'admin', 'super_admin', 'technician'], true)) {
         echo json_encode([
             'status' => 403,
-            'message' => 'Please verify your email before creating tickets. Check your inbox or spam folder.'
+            'message' => 'Forbidden.'
         ]);
         exit;
     }
 
 
 
-    $m_ticketId =  mysqli_real_escape_string($con, $_POST['m_ticketId']);
-    $user_id =  mysqli_real_escape_string($con, $_POST['user_id']);
+    $rawTicketId = $_POST['m_ticketId'] ?? '';
+    $m_ticketId = $rawTicketId === '' ? 0 : filter_var($rawTicketId, FILTER_VALIDATE_INT);
+    if ($m_ticketId === false || $m_ticketId < 0) {
+        http_response_code(400);
+        echo json_encode(['status' => 400, 'message' => 'Invalid ticket ID.']);
+        exit;
+    }
+
+    if ($m_ticketId === 0 && $user_role === 'technician') {
+        http_response_code(403);
+        echo json_encode(['status' => 403, 'message' => 'Technicians cannot create tickets.']);
+        exit;
+    }
+
     if ($user_role != 'technician') {
-        $title =  mysqli_real_escape_string($con, $_POST['ticket_title']);
-        $ticket_category = mysqli_real_escape_string($con, $_POST['project']);
-        $ticket_type_id = mysqli_real_escape_string($con, $_POST['ticket_type']);
-        $description = mysqli_real_escape_string($con, $_POST['ticket_description']);
+        $title = trim((string) ($_POST['ticket_title'] ?? ''));
+        $ticket_category = filter_var($_POST['project'] ?? null, FILTER_VALIDATE_INT);
+        $ticket_type_id = filter_var($_POST['ticket_type'] ?? null, FILTER_VALIDATE_INT);
+        $description = trim((string) ($_POST['ticket_description'] ?? ''));
 
-
-        if ($title == '') {
+        if ($title === '' || strlen($title) > 255) {
             $res = [
                 'status' => 101,
             ];
+            http_response_code(400);
             echo json_encode($res);
-            return;
+            exit;
         }
 
-        if ($ticket_category == '') {
+        if (!$ticket_category || $ticket_category < 1 || !$ticket_type_id || $ticket_type_id < 1
+            || strlen($description) > 1000) {
             $res = [
                 'status' => 102,
             ];
+            http_response_code(400);
             echo json_encode($res);
-            return;
+            exit;
         }
 
+        $statusOptions = ['open' => 'Open', 'in progress' => 'In progress', 'closed' => 'Closed'];
+        $status = $statusOptions[strtolower(trim((string) ($_POST['ticket_status'] ?? 'Open')))] ?? '';
+        if ($status === '') {
+            http_response_code(400);
+            echo json_encode(['status' => 400, 'message' => 'Invalid ticket status.']);
+            exit;
+        }
 
-
-
-        $queryck = "SELECT * FROM users right join users_info on users.user_id = users_info.user_id WHERE users.role = 'technician' and users_info.expertise = $ticket_category";
-        $resultck = mysqli_query($con, $queryck);
+        $queryck = "SELECT users.user_id FROM users
+                    INNER JOIN users_info ON users.user_id = users_info.user_id
+                    WHERE users.role = 'technician' AND users_info.expertise = ?";
+        $technicianStmt = $con->prepare($queryck);
+        if (!$technicianStmt) {
+            http_response_code(500);
+            echo json_encode(['status' => 500, 'message' => 'Unable to assign a technician.']);
+            exit;
+        }
+        $technicianStmt->bind_param('i', $ticket_category);
+        $technicianStmt->execute();
+        $resultck = $technicianStmt->get_result();
 
         $technicianTickets = [];
 
-        if (mysqli_num_rows($resultck) > 0) {
+        if ($resultck->num_rows > 0) {
             while ($rowck = $resultck->fetch_assoc()) {
                 $technician = $rowck['user_id'];
 
-                $querysk = "SELECT * FROM tickets WHERE technician = '$technician'";
-                $resultsk = mysqli_query($con, $querysk);
-                $tickets = mysqli_num_rows($resultsk);
+                $countStmt = $con->prepare("SELECT COUNT(*) AS ticket_count FROM tickets WHERE technician = ?");
+                if (!$countStmt) {
+                    $technicianStmt->close();
+                    http_response_code(500);
+                    echo json_encode(['status' => 500, 'message' => 'Unable to assign a technician.']);
+                    exit;
+                }
+                $technicianId = (int) $technician;
+                $countStmt->bind_param('i', $technicianId);
+                $countStmt->execute();
+                $tickets = (int) $countStmt->get_result()->fetch_assoc()['ticket_count'];
+                $countStmt->close();
 
                 // Store the technician and their ticket count in the array
                 $technicianTickets[] = ['technician' => $technician, 'tickets' => $tickets];
             }
         }
+        $technicianStmt->close();
 
 
         $lowestTechnician = null;
@@ -141,37 +230,72 @@ if (isset($_POST['post-ticket'])) {
                 $lowestTechnician = $entry['technician'];
             }
         }
+    } else {
+        $statusOptions = ['open' => 'Open', 'in progress' => 'In progress', 'closed' => 'Closed'];
+        $status = $statusOptions[strtolower(trim((string) ($_POST['ticket_status'] ?? '')))] ?? '';
+        if ($status === '') {
+            http_response_code(400);
+            echo json_encode(['status' => 400, 'message' => 'Invalid ticket status.']);
+            exit;
+        }
     }
 
 
-    $status = mysqli_real_escape_string($con, $_POST['ticket_status']);
-
-
-
-
-
-
-
-
-
-
-
-
-    if ($m_ticketId != '') {
+    if ($m_ticketId > 0) {
+        $ticketStmt = $con->prepare("SELECT user_id, technician FROM tickets WHERE ticket_id = ?");
+        if (!$ticketStmt) {
+            http_response_code(500);
+            echo json_encode(['status' => 500, 'message' => 'Unable to verify ticket access.']);
+            exit;
+        }
+        $ticketStmt->bind_param('i', $m_ticketId);
+        $ticketStmt->execute();
+        $existingTicket = $ticketStmt->get_result()->fetch_assoc();
+        $ticketStmt->close();
+        if (!$existingTicket) {
+            http_response_code(404);
+            echo json_encode(['status' => 404, 'message' => 'Ticket not found.']);
+            exit;
+        }
+        if (($user_role === 'client' && (int) $existingTicket['user_id'] !== $authenticatedUserId)
+            || ($user_role === 'technician' && (int) $existingTicket['technician'] !== $authenticatedUserId)) {
+            http_response_code(403);
+            echo json_encode(['status' => 403, 'message' => 'Forbidden.']);
+            exit;
+        }
 
         date_default_timezone_set('Asia/Manila');
         $last_activity = date("m/d/Y h:i a");
 
         if ($user_role == 'technician') {
-            $sqlf = "UPDATE tickets SET status='$status', last_activity='$last_activity' WHERE ticket_id = '$m_ticketId'";
-            $resultf = mysqli_query($con, $sqlf);
+            $stmt = $con->prepare("UPDATE tickets SET status = ?, last_activity = ? WHERE ticket_id = ?");
+            if (!$stmt) {
+                http_response_code(500);
+                echo json_encode(['status' => 500, 'message' => 'Unable to update ticket.']);
+                exit;
+            }
+            $stmt->bind_param('ssi', $status, $last_activity, $m_ticketId);
         } else if ($user_role == 'client') {
-            $sqlf = "UPDATE tickets SET title='$title', category_id=$ticket_category, type_id='$ticket_type_id', description='$description', technician=$lowestTechnician, last_activity='$last_activity' WHERE ticket_id = '$m_ticketId'";
-            $resultf = mysqli_query($con, $sqlf);
+            $stmt = $con->prepare("UPDATE tickets SET title = ?, category_id = ?, type_id = ?, description = ?, technician = ?, last_activity = ? WHERE ticket_id = ?");
+            if (!$stmt) {
+                http_response_code(500);
+                echo json_encode(['status' => 500, 'message' => 'Unable to update ticket.']);
+                exit;
+            }
+            $technicianId = (int) ($lowestTechnician ?? 0);
+            $stmt->bind_param('siisisi', $title, $ticket_category, $ticket_type_id, $description, $technicianId, $last_activity, $m_ticketId);
         } else {
-            $sqlf = "UPDATE tickets SET title='$title', category_id=$ticket_category, type_id='$ticket_type_id', description='$description', technician=$lowestTechnician, status='$status', last_activity='$last_activity' WHERE ticket_id = '$m_ticketId'";
-            $resultf = mysqli_query($con, $sqlf);
+            $stmt = $con->prepare("UPDATE tickets SET title = ?, category_id = ?, type_id = ?, description = ?, technician = ?, status = ?, last_activity = ? WHERE ticket_id = ?");
+            if (!$stmt) {
+                http_response_code(500);
+                echo json_encode(['status' => 500, 'message' => 'Unable to update ticket.']);
+                exit;
+            }
+            $technicianId = (int) ($lowestTechnician ?? 0);
+            $stmt->bind_param('siisissi', $title, $ticket_category, $ticket_type_id, $description, $technicianId, $status, $last_activity, $m_ticketId);
         }
+        $resultf = $stmt->execute();
+        $stmt->close();
 
 
 
@@ -184,7 +308,9 @@ if (isset($_POST['post-ticket'])) {
             echo json_encode($res);
             return;
         } else {
-            echo "error";
+            cleanupStoredTicketUploads($con, $uploadedFiles);
+            http_response_code(500);
+            echo json_encode(['status' => 500, 'message' => 'Unable to create ticket.']);
         }
     } else {
 
@@ -195,54 +321,35 @@ if (isset($_POST['post-ticket'])) {
 
 
 
-        $uploadedFiles = array();
-
-        if (!empty($_FILES['ticket_files']['tmp_name'][0])) {
-            $fileCount = count($_FILES['ticket_files']['tmp_name']);
-
-            for ($i = 0; $i < $fileCount; $i++) {
-                $file_name = $_FILES['ticket_files']['name'][$i];
-                $file_type = $_FILES['ticket_files']['type'][$i];
-                $file_tmp_name = $_FILES['ticket_files']['tmp_name'][$i];
-
-                // Move the file to the 'files' folder
-                $target_path = '../../files/ticket/' . $file_name;
-                if (move_uploaded_file($file_tmp_name, $target_path)) {
-                    // Insert file name and file type into the database
-                    $query = "INSERT INTO files (file_name, file_type) 
-                          VALUES ('$file_name', '$file_type')";
-                    $result = mysqli_query($con, $query);
-                    if ($result) {
-                        $uploadedFiles[] = mysqli_insert_id($con); // Store the ID of the inserted file
-                    } else {
-                        echo "Error inserting file into database: " . mysqli_error($con);
-                        exit;
-                    }
-                } else {
-                    echo "Error moving uploaded file to destination folder.";
-                    exit;
-                }
-            }
+        try {
+            $uploadedFiles = storeTicketUploads($con, 'ticket_files');
+        } catch (RuntimeException $exception) {
+            error_log('Ticket upload failed: ' . $exception->getMessage());
+            http_response_code(400);
+            echo json_encode(['status' => 400, 'message' => $exception->getMessage()]);
+            exit;
         }
 
         date_default_timezone_set('Asia/Manila');
         $createdDate = date("m/d/Y h:i a");
-
-
-        if (!empty($uploadedFiles)) {
-            $fileIdsString = implode(',', $uploadedFiles);
-            $query = "INSERT INTO tickets (user_id, title, category_id, type_id, description, status, files, technician, created) 
-              VALUES ('$user_id', '$title', '$ticket_category', '$ticket_type_id', '$description', '$status', '$fileIdsString', '$lowestTechnician', '$createdDate')";
-        } else {
-            $query = "INSERT INTO tickets (user_id, title, category_id, type_id, description, technician, created, status) 
-              VALUES ('$user_id', '$title', '$ticket_category', '$ticket_type_id', '$description', '$lowestTechnician', '$createdDate', '$status')";
+        $fileIdsString = implode(',', $uploadedFiles['ids']);
+        $technicianId = (int) ($lowestTechnician ?? 0);
+        $stmt = $con->prepare(
+            "INSERT INTO tickets (user_id, title, category_id, type_id, description, status, files, technician, created)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        if (!$stmt) {
+            cleanupStoredTicketUploads($con, $uploadedFiles);
+            http_response_code(500);
+            echo json_encode(['status' => 500, 'message' => 'Unable to create ticket.']);
+            exit;
         }
-
-        $result = mysqli_query($con, $query);
+        $stmt->bind_param('isiisssis', $user_id, $title, $ticket_category, $ticket_type_id, $description, $status, $fileIdsString, $technicianId, $createdDate);
+        $result = $stmt->execute();
+        $last_id = $result ? (int) $con->insert_id : 0;
+        $stmt->close();
 
         if ($result) {
-            $last_id = $con->insert_id;
-
             $res = [
                 'status' => 100,
                 'id' => sprintf("%04d", $last_id),
@@ -304,101 +411,107 @@ if (isset($_POST['post-ticket'])) {
 
 
 if (isset($_POST['post-ticket-comment'])) {
-    // NEW: Verification check for comments
-    $comment_user_id = mysqli_real_escape_string($con, $_POST['users_id']);
-    $verified_check = mysqli_query($con, "SELECT verified FROM users WHERE user_id = '$comment_user_id'");
-    
-    if ($verified_check && mysqli_num_rows($verified_check) > 0) {
-        $user_data = mysqli_fetch_assoc($verified_check);
-        if ($user_data['verified'] != 1) {
-            $res = [
-                'status' => 403,
-                'message' => 'Please verify your email before posting comments'
-            ];
-            echo json_encode($res);
+    $comment_user_id = $authenticatedUserId;
+    $comment_ticket_id = filter_var($_POST['comment_ticket_id'] ?? null, FILTER_VALIDATE_INT);
+    $comment_textarea = trim((string) ($_POST['comment_textarea'] ?? ''));
+    if (!$comment_ticket_id || $comment_ticket_id < 1 || strlen($comment_textarea) > 250) {
+        http_response_code(400);
+        echo json_encode(['status' => 400, 'message' => 'Invalid comment.']);
+        exit;
+    }
+
+    $ticketStmt = $con->prepare("SELECT user_id, technician FROM tickets WHERE ticket_id = ?");
+    if (!$ticketStmt) {
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to verify ticket access.']);
+        exit;
+    }
+    $ticketStmt->bind_param('i', $comment_ticket_id);
+    $ticketStmt->execute();
+    $commentTicket = $ticketStmt->get_result()->fetch_assoc();
+    $ticketStmt->close();
+    if (!$commentTicket) {
+        http_response_code(404);
+        echo json_encode(['status' => 404, 'message' => 'Ticket not found.']);
+        exit;
+    }
+    if (($user_role === 'client' && (int) $commentTicket['user_id'] !== $authenticatedUserId)
+        || ($user_role === 'technician' && (int) $commentTicket['technician'] !== $authenticatedUserId)) {
+        http_response_code(403);
+        echo json_encode(['status' => 403, 'message' => 'Forbidden.']);
+        exit;
+    }
+    if ($user_role === 'client') {
+        $verifiedStmt = $con->prepare("SELECT verified FROM users WHERE user_id = ?");
+        if (!$verifiedStmt) {
+            http_response_code(500);
+            echo json_encode(['status' => 500, 'message' => 'Unable to verify account.']);
+            exit;
+        }
+        $verifiedStmt->bind_param('i', $comment_user_id);
+        $verifiedStmt->execute();
+        $verified = $verifiedStmt->get_result()->fetch_assoc();
+        $verifiedStmt->close();
+        if (!$verified || (int) $verified['verified'] !== 1) {
+            http_response_code(403);
+            echo json_encode(['status' => 403, 'message' => 'Please verify your email before posting comments.']);
             exit;
         }
     }
 
-    $comment_user_id =  mysqli_real_escape_string($con, $_POST['users_id']);
-    $comment_ticket_id =  mysqli_real_escape_string($con, $_POST['comment_ticket_id']);
-    $comment_textarea = mysqli_real_escape_string($con, $_POST['comment_textarea']);
-
-
-    if ($comment_textarea == '' && empty($_FILES['comment_files']['tmp_name'][0])) {
+    if ($comment_textarea === '' && empty($_FILES['comment_files']['name'][0])) {
         $res = [
             'status' => 101,
         ];
         echo json_encode($res);
-        return;
+        exit;
     }
 
-    $uploadedFiles = array();
-
-    if (!empty($_FILES['comment_files']['tmp_name'][0])) {
-        $fileCount = count($_FILES['comment_files']['tmp_name']);
-
-        for ($i = 0; $i < $fileCount; $i++) {
-            $file_name = $_FILES['comment_files']['name'][$i];
-            $file_type = $_FILES['comment_files']['type'][$i];
-            $file_tmp_name = $_FILES['comment_files']['tmp_name'][$i];
-
-            // Move the file to the 'files' folder
-            $target_path = '../../files/ticket/' . $file_name;
-            if (move_uploaded_file($file_tmp_name, $target_path)) {
-                // Insert file name and file type into the database
-                $query = "INSERT INTO files (file_name, file_type) 
-                      VALUES ('$file_name', '$file_type')";
-                $result = mysqli_query($con, $query);
-                if ($result) {
-                    $uploadedFiles[] = mysqli_insert_id($con); // Store the ID of the inserted file
-                } else {
-                    echo "Error inserting file into database: " . mysqli_error($con);
-                    exit;
-                }
-            } else {
-                echo "Error moving uploaded file to destination folder.";
-                exit;
-            }
-        }
+    try {
+        $uploadedFiles = storeTicketUploads($con, 'comment_files');
+    } catch (RuntimeException $exception) {
+        error_log('Ticket comment upload failed: ' . $exception->getMessage());
+        http_response_code(400);
+        echo json_encode(['status' => 400, 'message' => $exception->getMessage()]);
+        exit;
     }
 
     date_default_timezone_set('Asia/Manila');
     $date_stamp = date("m/d/Y h:i a");
-
-
-    if (!empty($uploadedFiles)) {
-        $fileIdsString = implode(',', $uploadedFiles);
-        $query = "INSERT INTO ticket_comments (ticket_id, user_id, description, files, date_stamp) 
-              VALUES ('$comment_ticket_id', '$comment_user_id', '$comment_textarea', '$fileIdsString', '$date_stamp')";
-    } else {
-        $query = "INSERT INTO ticket_comments (ticket_id, user_id, description, date_stamp) 
-              VALUES ('$comment_ticket_id', '$comment_user_id', '$comment_textarea', '$date_stamp')";
+    $fileIdsString = implode(',', $uploadedFiles['ids']);
+    $commentStmt = $con->prepare(
+        "INSERT INTO ticket_comments (ticket_id, user_id, description, files, date_stamp) VALUES (?, ?, ?, ?, ?)"
+    );
+    if (!$commentStmt) {
+        cleanupStoredTicketUploads($con, $uploadedFiles);
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to save comment.']);
+        exit;
     }
-
-    $result = mysqli_query($con, $query);
-
+    $commentStmt->bind_param('iisss', $comment_ticket_id, $comment_user_id, $comment_textarea, $fileIdsString, $date_stamp);
+    $result = $commentStmt->execute();
+    $commentStmt->close();
+    if (!$result) {
+        cleanupStoredTicketUploads($con, $uploadedFiles);
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to save comment.']);
+        exit;
+    }
 
     $last_activity = date("m/d/Y h:i a");
-    $sql = "update `tickets` set last_activity='$last_activity' where ticket_id='$comment_ticket_id'";
-    $updateresult = mysqli_query($con, $sql);
-
-
-
-    if ($result) {
-
-        $res = [
-            'status' => 100,
-        ];
-        echo json_encode($res);
-        return;
+    $activityStmt = $con->prepare("UPDATE tickets SET last_activity = ? WHERE ticket_id = ?");
+    if (!$activityStmt) {
+        error_log('Unable to prepare ticket activity update after comment.');
     } else {
-        echo "error";
+        $activityStmt->bind_param('si', $last_activity, $comment_ticket_id);
+        if (!$activityStmt->execute()) {
+            error_log('Unable to update ticket activity after comment.');
+        }
+        $activityStmt->close();
     }
 
-
-
-    mysqli_close($con);
+    echo json_encode(['status' => 100]);
+    exit;
 }
 
 
@@ -433,51 +546,96 @@ if (isset($_POST['post-ticket-comment'])) {
 
 
 if (isset($_POST['evaluateTechnicianForm'])) {
-
-
-
-    $ticketId =  mysqli_real_escape_string($con, $_POST['ticketId']);
-    $ticketTechnician =  mysqli_real_escape_string($con, $_POST['ticketTechnician']);
-    $ticketClient =  mysqli_real_escape_string($con, $_POST['ticketClient']);
-    $comments =  mysqli_real_escape_string($con, $_POST['comments']);
-    $solutionSatisfaction = isset($_POST['solutionSatisfaction']) ? mysqli_real_escape_string($con, $_POST['solutionSatisfaction']) : '';
-    $customerSatisfaction = isset($_POST['customerSatisfaction']) ? mysqli_real_escape_string($con, $_POST['customerSatisfaction']) : '';
-    $comments = isset($_POST['comments']) ? mysqli_real_escape_string($con, $_POST['comments']) : '';
-
-    if (empty($solutionSatisfaction) || empty($customerSatisfaction)) {
-        $res = [
-            'status' => 101,
-        ];
-        echo json_encode($res);
-        return;
+    if ($user_role !== 'client') {
+        http_response_code(403);
+        echo json_encode(['status' => 403, 'message' => 'Only ticket owners may submit evaluations.']);
+        exit;
     }
 
+    $ticketId = filter_var($_POST['ticketId'] ?? null, FILTER_VALIDATE_INT);
+    $solutionSatisfaction = filter_var($_POST['solutionSatisfaction'] ?? null, FILTER_VALIDATE_INT);
+    $customerSatisfaction = filter_var($_POST['customerSatisfaction'] ?? null, FILTER_VALIDATE_INT);
+    $comments = trim((string) ($_POST['comments'] ?? ''));
+    if (!$ticketId || $ticketId < 1
+        || !$solutionSatisfaction || $solutionSatisfaction < 1 || $solutionSatisfaction > 5
+        || !$customerSatisfaction || $customerSatisfaction < 1 || $customerSatisfaction > 5) {
+        http_response_code(400);
+        echo json_encode(['status' => 101, 'message' => 'Select valid evaluation ratings.']);
+        exit;
+    }
 
+    $ticketStmt = $con->prepare("SELECT user_id, technician FROM tickets WHERE ticket_id = ?");
+    if (!$ticketStmt) {
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to verify ticket access.']);
+        exit;
+    }
+    $ticketStmt->bind_param('i', $ticketId);
+    $ticketStmt->execute();
+    $ticket = $ticketStmt->get_result()->fetch_assoc();
+    $ticketStmt->close();
+    if (!$ticket || (int) $ticket['user_id'] !== $authenticatedUserId) {
+        http_response_code(403);
+        echo json_encode(['status' => 403, 'message' => 'Forbidden.']);
+        exit;
+    }
+    $ticketTechnician = (int) $ticket['technician'];
+    if ($ticketTechnician < 1) {
+        http_response_code(400);
+        echo json_encode(['status' => 400, 'message' => 'This ticket has no assigned technician.']);
+        exit;
+    }
 
     date_default_timezone_set('Asia/Manila');
     $dateStamp = date("m/d/Y h:i a");
-
-
-    $sql = "delete from `evaluation` where ticket_id =$ticketId";
-    $delete_result = mysqli_query($con, $sql);
-
-    $query = "INSERT INTO evaluation (ticket_id, technician_id, client_id, solution, customer_satisfaction, comments, date_stamp) 
-              VALUES ('$ticketId', '$ticketTechnician', '$ticketClient', '$solutionSatisfaction', '$customerSatisfaction', '$comments', '$dateStamp')";
-    $result = mysqli_query($con, $query);
-
-    if ($result) {
-
-        $res = [
-            'status' => 100,
-        ];
-        echo json_encode($res);
-        return;
-    } else {
-        echo "error";
+    $con->begin_transaction();
+    $deleteStmt = $con->prepare("DELETE FROM evaluation WHERE ticket_id = ?");
+    $insertStmt = $con->prepare(
+        "INSERT INTO evaluation (ticket_id, technician_id, client_id, solution, customer_satisfaction, comments, date_stamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
+    if (!$deleteStmt || !$insertStmt) {
+        $con->rollback();
+        if ($deleteStmt) {
+            $deleteStmt->close();
+        }
+        if ($insertStmt) {
+            $insertStmt->close();
+        }
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to save evaluation.']);
+        exit;
+    }
+    $deleteStmt->bind_param('i', $ticketId);
+    $deleted = $deleteStmt->execute();
+    $deleteStmt->close();
+    if (!$deleted) {
+        $con->rollback();
+        $insertStmt->close();
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to save evaluation.']);
+        exit;
     }
 
-
-
-
-    mysqli_close($con);
+    $insertStmt->bind_param(
+        'iiiiiss',
+        $ticketId,
+        $ticketTechnician,
+        $authenticatedUserId,
+        $solutionSatisfaction,
+        $customerSatisfaction,
+        $comments,
+        $dateStamp
+    );
+    $saved = $insertStmt->execute();
+    $insertStmt->close();
+    if (!$saved) {
+        $con->rollback();
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to save evaluation.']);
+        exit;
+    }
+    $con->commit();
+    echo json_encode(['status' => 100]);
+    exit;
 }

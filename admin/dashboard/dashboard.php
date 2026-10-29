@@ -4,7 +4,8 @@ session_start();
 
 if (!empty($_SESSION['logged_in'])) {
   if($_SESSION['role'] != 'super_admin'){
-    header("location:../../admin/dashboard/dashboard.php");
+    header("location:../../user/dashboard/dashboard.php");
+    exit;
   }
 } else {
     header("location:../../index.php");
@@ -13,58 +14,63 @@ if (!empty($_SESSION['logged_in'])) {
 
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
+$dashboardLinks = [
+  'projects' => '../projects/list.php',
+  'tickets' => '../tickets/list.php',
+  'clients' => '../users/list.php',
+  'technicians' => '../users/list.php',
+  'admins' => '../users/list.php',
+  'categories' => '../../user/settings/ticket-category.php',
+];
 
-
-
-$sql = "SELECT COUNT(project_id) AS projectCount FROM projects";
-$result = $con->query($sql);
-
-if ($result->num_rows > 0) {
-    $row = $result->fetch_assoc();
-    $projectCount = $row['projectCount'];
+$counts = [
+  'projects' => 'SELECT COUNT(*) AS total FROM projects',
+  'tickets' => 'SELECT COUNT(*) AS total FROM tickets',
+  'clients' => "SELECT COUNT(*) AS total FROM users WHERE role = 'client'",
+  'technicians' => "SELECT COUNT(*) AS total FROM users WHERE role = 'technician'",
+  'admins' => "SELECT COUNT(*) AS total FROM users WHERE role = 'admin'",
+];
+$dashboardCounts = [];
+foreach ($counts as $key => $query) {
+  $result = mysqli_query($con, $query);
+  if (!$result) {
+    throw new RuntimeException('Unable to load dashboard metrics.');
+  }
+  $dashboardCounts[$key] = (int) mysqli_fetch_assoc($result)['total'];
 }
 
-$sqlp = "SELECT COUNT(ticket_id) AS ticketCount FROM tickets";
-$resultp = $con->query($sqlp);
-
-if ($resultp->num_rows > 0) {
-    $rowp = $resultp->fetch_assoc();
-    $ticketCount = $rowp['ticketCount'];
+$taskStatusCounts = ['To do' => 0, 'In progress' => 0, 'Completed' => 0, 'Other' => 0];
+$taskStatusResult = mysqli_query($con, 'SELECT status, COUNT(*) AS total FROM projects_task GROUP BY status');
+if (!$taskStatusResult) {
+  throw new RuntimeException('Unable to load project task metrics.');
 }
-
-$sqlu = "SELECT COUNT(user_id) AS clientCount FROM users where role = 'client'";
-$resultu = $con->query($sqlu);
-
-if ($resultu->num_rows > 0) {
-    $rowu = $resultu->fetch_assoc();
-    $clientCount = $rowu['clientCount'];
+while ($row = mysqli_fetch_assoc($taskStatusResult)) {
+  $status = strtolower(trim($row['status']));
+  if ($status === 'to do') {
+    $taskStatusCounts['To do'] += (int) $row['total'];
+  } elseif ($status === 'in progress') {
+    $taskStatusCounts['In progress'] += (int) $row['total'];
+  } elseif ($status === 'completed') {
+    $taskStatusCounts['Completed'] += (int) $row['total'];
+  } else {
+    $taskStatusCounts['Other'] += (int) $row['total'];
+  }
 }
-
-$sqlt = "SELECT COUNT(user_id) AS technicianCount FROM users where role = 'technician'";
-$resultt = $con->query($sqlt);
-
-if ($resultt->num_rows > 0) {
-    $rowt = $resultt->fetch_assoc();
-    $technicianCount = $rowt['technicianCount'];
+$recentTasksResult = mysqli_query($con, "SELECT projects_task.task_id, projects_task.project_id, projects_task.task_title,
+    projects_task.status, projects_task.date_created, projects.project_title
+  FROM projects_task
+  INNER JOIN projects ON projects.project_id = projects_task.project_id
+  ORDER BY projects_task.task_id DESC
+  LIMIT 6");
+if (!$recentTasksResult) {
+  throw new RuntimeException('Unable to load recent project tasks.');
 }
-
-$sqla = "SELECT COUNT(user_id) AS adminCount FROM users where role = 'admin'";
-$resulta = $con->query($sqla);
-
-if ($resulta->num_rows > 0) {
-    $rowa = $resulta->fetch_assoc();
-    $adminCount = $rowa['adminCount'];
+$recentTasks = [];
+while ($row = mysqli_fetch_assoc($recentTasksResult)) {
+  $recentTasks[] = $row;
 }
-
-if ($resulth->num_rows > 0) {
-    $rowh = $resulta->fetch_assoc();
-    $superadminCount = $rowh['superadminCount'];
-}
-
-
-
-
-
+require_once __DIR__ . '/../../includes/recent_task_shares.php';
+$recentTaskShares = loadRecentTaskShares($con, $recentTasks);
 ?>
 <!DOCTYPE html>
 <html lang="en" >
@@ -72,45 +78,7 @@ if ($resulth->num_rows > 0) {
   <meta charset="UTF-8">
   <title>Dashboard</title>
 <?php include("../header.php") ?>
-
-<style>
-
-
-
-.counter.animate {
-  animation: count 2s ease-out;
-}
-
-@keyframes count {
-  from { opacity: 0; transform: translateY(-20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-
-
-  .col.card.dash{
-  background-color: rgb(140, 136, 102);
-  color:#fff;
-  text-align: end;
-  height:100px;
-  justify-content: end;
-  border: 0;
-  position: relative;
-}
-
-.col.card.dash i{
-  position: absolute;
-  font-size: 2.5rem;
-  top:0;
-  opacity: .7;
-}
-
-.col.card.dash:hover{
-  background-color: #092a2f;
-  cursor: pointer;
-  box-shadow: 0 0px 10px 0px rgba(0, 0, 0, 0.05);
-}
-</style>
+<link rel="stylesheet" href="../../links/dashboard-admin.css">
 
 </head>
 <body>
@@ -126,59 +94,13 @@ if ($resulth->num_rows > 0) {
             </a>
           </div>
 
-          <div class="row mt-4 gap-2">
-            <a href="../projects/list.php" class="col card dash">
-              <h6 class="counter" id="projectCount">0</h6>
-              <h5>Projects</h5>
-              <i class="ri-server-line"></i>
-            </a>
-            
-            <a href="../tickets/list.php" class="col card dash">
-            <h6 class="counter" id="ticketCount">0</h6>
-              <h5>Tickets</h5>
-              <i class="ri-aed-electrodes-line"></i>
-            </a>
-
-            <a href="../users/list.php" class="col card dash">
-            <h6 class="counter" id="clientCount">0</h6>
-              <h5>Clients</h5>
-              <i class="ri-group-line"></i>
-            </a>
-
-            <a href="../users/list.php" class="col card dash">
-            <h6 class="counter" id="technicianCount">0</h6>
-              <h5>Technicians</h5>
-              <i class="ri-user-settings-line"></i>
-            </a>
-
-            <a href="../users/list.php" class="col card dash">
-            <h6 class="counter" id="adminCount">0</h6>
-              <h5>Admins</h5>
-              <i class="ri-admin-line"></i>
-            </a>
-
-            
-            
-            
-            
-           
-          </div>
-        
-        
-
-
-
-
-
-
-
-
-
+          <?php include(__DIR__ . '/../../includes/admin_dashboard_widgets.php'); ?>
 
 
           <div class="row mt-4 card shadow-sm">
-          <div class="card-header d-flex" style="justify-content: space-between; padding: 24px 12px; background-color:rgb(140, 136, 102); color:#fff; border-radius:0">
-            <h6>Projects</h6>
+          <div class="card-header d-flex align-items-center" style="justify-content: space-between; padding: 20px 16px; background-color:#fff; color:#092a2f; border-radius:0">
+            <h6>Project overview</h6>
+            <a class="dashboard-text-link" href="../projects/list.php">All projects <i class="ri-arrow-right-line" aria-hidden="true"></i></a>
              </div>
           <div class="card-body" id="project_results">
 
@@ -291,35 +213,6 @@ if ($resulth->num_rows > 0) {
 </body>
 <script>
   $(document).ready(function() {
-
-
-  animateCounter('#projectCount',<?php echo json_encode($projectCount) ?>);
-  animateCounter('#ticketCount',<?php echo json_encode($ticketCount) ?>);
-  animateCounter('#clientCount',<?php echo json_encode($clientCount) ?>);
-  animateCounter('#technicianCount',<?php echo json_encode($technicianCount) ?>);
-  animateCounter('#adminCount',<?php echo json_encode($adminCount) ?>);
-
-  function animateCounter(selector, value) {
-    var element = $(selector);
-    var start = 0;
-    var end = value;
-    var duration = 2000; // Animation duration in milliseconds
-    var difference = end - start;
-    var step = Math.ceil(duration / difference);
-    var current = start;
-    var interval = setInterval(function() {
-      element.text(current);
-      current += 1; // Increment by 1
-      if (current >= end) {
-        element.text(end);
-        clearInterval(interval);
-      }
-    }, step);
-    element.addClass('animate');
-  }
-
-
-
   $('.table_display').DataTable({
                 "lengthMenu": [
                   [10, 25, 50, -1],

@@ -12,6 +12,18 @@ font-size:.6rem;
 
 date_default_timezone_set('Asia/Manila');
 
+function sidebarLinkIsCurrent($href)
+{
+    $currentPath = realpath($_SERVER['SCRIPT_FILENAME']);
+    $linkPath = parse_url($href, PHP_URL_PATH);
+    $targetPath = $linkPath ? realpath(dirname($currentPath) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $linkPath)) : false;
+
+    return $currentPath && $targetPath && $currentPath === $targetPath;
+}
+
+$usersMenuIsActive = sidebarLinkIsCurrent('../users/list.php');
+$settingsMenuIsActive = sidebarLinkIsCurrent('../settings/my-profile.php');
+
 $query = "SELECT * FROM users where user_id = $user_id";
                                             $result = mysqli_query($con, $query);
                                             if (mysqli_num_rows($result) > 0) {
@@ -36,33 +48,23 @@ $query = "SELECT * FROM users where user_id = $user_id";
             <nav class="menu open-current-submenu">
               <ul>
                 <li class="menu-header"><span> GENERAL </span></li>
-                <li class="menu-item">
-                  <a href="../dashboard/dashboard.php">
+                <li class="menu-item<?= sidebarLinkIsCurrent('../dashboard/dashboard.php') ? ' active' : '' ?>">
+                  <a href="../dashboard/dashboard.php"<?= sidebarLinkIsCurrent('../dashboard/dashboard.php') ? ' aria-current="page"' : '' ?>>
                     <span class="menu-icon">
                       <i class="ri-dashboard-horizontal-fill"></i>
                     </span>
                     <span class="menu-title">Dashboard</span>
                   </a>
                 </li>
-                    <li class="menu-item">
-                        <a href="../projects/list.php">
+                    <li class="menu-item<?= sidebarLinkIsCurrent('../projects/list.php') ? ' active' : '' ?>">
+                        <a href="../projects/list.php"<?= sidebarLinkIsCurrent('../projects/list.php') ? ' aria-current="page"' : '' ?>>
                             <span class="menu-icon">
                                 <i class="ri-server-line"></i>
                             </span>
                             <span class="menu-title">Projects</span>
                         </a>
                     </li>
-                <li class="menu-item">
-                  <a href="../tickets/list.php">
-                    <span class="menu-icon">
-                    <i class="ri-aed-electrodes-line"></i>
-                    </span>
-                    <span class="menu-title">Tickets</span>
-                  </a>
-                </li>
-               
-
-                <li class="menu-item sub-menu">
+                <li class="menu-item sub-menu<?= $usersMenuIsActive ? ' active open' : '' ?>">
                 <a href="#">
                     <span class="menu-icon">
                     <i class="ri-group-line"></i>
@@ -83,8 +85,8 @@ $query = "SELECT * FROM users where user_id = $user_id";
                         </a>
                       </li>
 
-                      <li class="menu-item">
-                        <a href="../users/list.php">
+                      <li class="menu-item<?= sidebarLinkIsCurrent('../users/list.php') ? ' active' : '' ?>">
+                        <a href="../users/list.php"<?= sidebarLinkIsCurrent('../users/list.php') ? ' aria-current="page"' : '' ?>>
                           <span class="menu-title"><span class="menu-icon"><i class="ri-list-unordered"></i></span>&nbsp;Admins</span>
                         </a>
                       </li>
@@ -102,7 +104,7 @@ $query = "SELECT * FROM users where user_id = $user_id";
                 <li class="menu-header" style="padding-top: 20px"><span> OTHERS </span></li>
                 
                 <?php if($userRoles!='super_admin'){ ?>
-                <li class="menu-item sub-menu">
+                <li class="menu-item sub-menu<?= $settingsMenuIsActive ? ' active open' : '' ?>">
                   <a href="#">
                     <span class="menu-icon">
                      <i class="ri-settings-fill"></i>
@@ -111,8 +113,8 @@ $query = "SELECT * FROM users where user_id = $user_id";
                   </a>
                   <div class="sub-menu-list">
                     <ul>
-                      <li class="menu-item">
-                        <a href="../settings/my-profile.php">
+                      <li class="menu-item<?= sidebarLinkIsCurrent('../settings/my-profile.php') ? ' active' : '' ?>">
+                        <a href="../settings/my-profile.php"<?= sidebarLinkIsCurrent('../settings/my-profile.php') ? ' aria-current="page"' : '' ?>>
                         <span class="menu-icon">
                         <i class="ri-user-settings-line"></i>
                     </span>
@@ -140,4 +142,8 @@ $query = "SELECT * FROM users where user_id = $user_id";
         </div>
       </aside>
       <div id="overlay" class="overlay"></div>
+      <?php
+      require_once __DIR__ . '/../includes/page_breadcrumbs.php';
+      renderPageBreadcrumbs('admin');
+      ?>
       

@@ -1,30 +1,26 @@
-<?php 
+<?php
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-require 'includes/phpmailer/src/Exception.php';
-require 'includes/phpmailer/src/PHPMailer.php';
-require 'includes/phpmailer/src/SMTP.php';
+require_once __DIR__ . '/../includes/phpmailer/src/Exception.php';
+require_once __DIR__ . '/../includes/phpmailer/src/PHPMailer.php';
+require_once __DIR__ . '/../includes/phpmailer/src/SMTP.php';
+require_once __DIR__ . '/../includes/smtp_config.php';
 
-$email= new PHPMailer(true);
+$email = new PHPMailer(true);
 
-$email->isSMTP();
-$email->Host = 'smtp.gmail.com';
-$email->SMTPAuth = true;
-$email->Username = 'mojarjairus@gmail.com';
-$email->Password = 'zxmrghjzpmfjzhdm';
-$email->SMTPSecure = 'ssl';
-$email->Port = 465;
+try {
+    if (!configureTicketingMailer($email)) {
+        return false;
+    }
 
-$email->setFrom('mojarjairus@gmail.com', 'Project');
-
-$email->addAddress($recover_email);
-
-$email->isHTML(true);
-
-$email->Subject = $subject;
-$email->Body = $message;
-
-$email->send();
-
-?>
+    $email->addAddress($recover_email);
+    $email->isHTML(true);
+    $email->Subject = $subject;
+    $email->Body = $message;
+    $email->send();
+    return true;
+} catch (Exception $exception) {
+    error_log('Recovery email failed: ' . $email->ErrorInfo);
+    return false;
+}

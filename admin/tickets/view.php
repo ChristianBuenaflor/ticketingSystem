@@ -2,9 +2,15 @@
 include("../../includes/connections.php");
 session_start();
 
+if (empty($_SESSION['csrf_token'])) {
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
 if (!empty($_SESSION['logged_in'])) {
   if($_SESSION['role'] != 'super_admin'){
     header("location:../../user/dashboard/dashboard.php");
+    exit;
   }
 } else {
     header("location:../../index.php");
@@ -212,7 +218,10 @@ if($project_id!=0)
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
 
-                <li><a href="actions.php?ticketID=<?= $ticket_id ?>&urlID=<?= $ticket_id ?>" class="dropdown-item" type="button">
+                <li><form method="post" action="actions.php" class="m-0">
+                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8') ?>">
+                  <input type="hidden" name="ticketID" value="<?= (int) $ticket_id ?>">
+                  <button class="dropdown-item" type="submit">
                     <?php if ($ticket_status == 'In progress') { ?>
                       <i style="color:rgb(140, 136, 102); font-size:.9rem" class="ri-close-circle-fill"></i> Mark as closed
                     <?php } else if ($ticket_status == 'Open') {
@@ -224,7 +233,8 @@ if($project_id!=0)
                       <i style="color:darkolivegreen; font-size:.9rem" class="ri-checkbox-circle-fill"></i> Mark as open
                     <?php
                     } ?>
-                  </a></li>
+                  </button>
+                </form></li>
 
 
 
@@ -408,7 +418,7 @@ if($project_id!=0)
                                  if ($images > 1) {
                                      echo 'class="d-none" ';
                                  }
-                                 echo 'href="../../files/ticket/' . $comment_file . '"><img class="attached-files" src="../../files/ticket/' . $comment_file . '">';
+                                 echo 'href="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '&amp;inline=1" target="_blank" rel="noopener"><img class="attached-files" src="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '&amp;inline=1">';
                                  if ($comment_image_count > 1) {
                                      ?><span class="more-span">+<?= $comment_image_count -1 ; ?> More</span><?php
                                  }
@@ -440,7 +450,7 @@ if($project_id!=0)
                             <?php 
                                // Display non-image files
                                foreach ($non_image_files as $file) {
-                                echo '<a target="_blank" class="files" href="../../files/ticket/'.$file['file_name'].'">' . $file['file_name'] . '</a><br>';
+                                echo '<a target="_blank" rel="noopener" class="files" href="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '">' . htmlspecialchars($file['file_name'], ENT_QUOTES, 'UTF-8') . '</a><br>';
                             }
                ?>
                           </div>
@@ -519,7 +529,7 @@ if($project_id!=0)
                       if ($images > 1) {
                         echo 'class="d-none" ';
                       }
-                      echo 'href="../../files/ticket/' . $ticket_file . '"><img class="attached-files" src="../../files/ticket/' . $ticket_file . '">';
+                      echo 'href="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '&amp;inline=1" target="_blank" rel="noopener"><img class="attached-files" src="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '&amp;inline=1">';
                       if ($image_count > 1) {
                   ?><span class="more-span">+<?= $image_count - 1; ?> More</span><?php
                                                                         }
@@ -536,7 +546,7 @@ if($project_id!=0)
                   <?php 
                       // Display non-image files
                       foreach ($non_image_files as $file) {
-                        echo '<a target="_blank" class="files" href="../../files/ticket/'.$file['file_name'].'">' . $file['file_name'] . '</a><br>';
+                        echo '<a target="_blank" rel="noopener" class="files" href="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '">' . htmlspecialchars($file['file_name'], ENT_QUOTES, 'UTF-8') . '</a><br>';
                       }
                   ?>
                 </div>

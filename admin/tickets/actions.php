@@ -1,42 +1,57 @@
 <?php
-include "../../includes/connections.php";
+include("../../includes/connections.php");
+session_start();
 
-date_default_timezone_set('Asia/Manila');
-
-if (isset($_GET['ticketID'])) {
-  $id = $_GET['ticketID'];
-
-if(!empty($_GET['urlID'])){
-    $url = $_GET['urlID'];
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    exit('Method not allowed.');
+}
+if (empty($_SESSION['logged_in']) || ($_SESSION['role'] ?? '') !== 'super_admin') {
+    http_response_code(403);
+    exit('Forbidden.');
+}
+if (!isset($_POST['csrf_token'], $_SESSION['csrf_token'])
+    || !hash_equals($_SESSION['csrf_token'], (string) $_POST['csrf_token'])) {
+    http_response_code(403);
+    exit('Invalid security token.');
 }
 
-$qAction = "Select * from tickets where ticket_id = $id";
-$rAction = mysqli_query($con, $qAction);
-if (mysqli_num_rows($rAction) > 0) {
-  while ($rowAction = $rAction->fetch_assoc()) {
-    $status = $rowAction['status'];
-  }
+$ticketId = filter_var($_POST['ticketID'] ?? null, FILTER_VALIDATE_INT);
+if (!$ticketId || $ticketId < 1) {
+    http_response_code(400);
+    exit('Invalid ticket ID.');
 }
 
-if($status == 'In progress'){
-  $status = 'Closed';
-}else if($status == 'Open')
-{
-  $status = 'In progress';
+$stmt = $con->prepare("SELECT status FROM tickets WHERE ticket_id = ?");
+if (!$stmt) {
+    http_response_code(500);
+    exit('Unable to load ticket.');
 }
-else{
-  $status = 'Open';
-}
-
-
-    $last_activity = date("m/d/Y h:i a");
-    $sqlup = "update `tickets` set last_activity='$last_activity', status='$status' where ticket_id='$id'";
-                $updateresult = mysqli_query($con, $sqlup);
-    
-
-  header("Location:view.php?ticketID=$url");
+$stmt->bind_param('i', $ticketId);
+$stmt->execute();
+$ticket = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+if (!$ticket) {
+    http_response_code(404);
+    exit('Ticket not found.');
 }
 
+$nextStatus = $ticket['status'] === 'Open'
+    ? 'In progress'
+    : ($ticket['status'] === 'In progress' ? 'Closed' : 'Open');
+$lastActivity = date('m/d/Y h:i a');
+$updateStmt = $con->prepare("UPDATE tickets SET status = ?, last_activity = ? WHERE ticket_id = ?");
+if (!$updateStmt) {
+    http_response_code(500);
+    exit('Unable to update ticket.');
+}
+$updateStmt->bind_param('ssi', $nextStatus, $lastActivity, $ticketId);
+if (!$updateStmt->execute()) {
+    $updateStmt->close();
+    http_response_code(500);
+    exit('Unable to update ticket.');
+}
+$updateStmt->close();
 
-
- 
+header('Location: view.php?ticketID=' . $ticketId);
+exit;

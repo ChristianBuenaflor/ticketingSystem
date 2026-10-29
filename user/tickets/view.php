@@ -10,6 +10,14 @@ if (!empty($_SESSION['logged_in'])) {
 
 $user_id = $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
+if (empty($_SESSION['csrf_token'])) {
+  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+if (!in_array($user_role, ['admin', 'super_admin', 'client', 'technician'], true)) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
 
 
 $quserP = "Select * from users_info where user_id = $user_id";
@@ -28,12 +36,32 @@ if (mysqli_num_rows($resultuserP) > 0) {
 
 
 if (isset($_GET['ticketID'])) {
-  $ticket_id = $_GET['ticketID'];
+  $ticket_id = filter_var($_GET['ticketID'], FILTER_VALIDATE_INT);
+  if (!$ticket_id || $ticket_id < 1) {
+    http_response_code(400);
+    exit('Invalid ticket ID.');
+  }
 
-  $query = "SELECT * FROM tickets WHERE ticket_id = $ticket_id";
-  $result = mysqli_query($con, $query);
-  if (mysqli_num_rows($result) > 0) {
-    while ($row = $result->fetch_assoc()) {
+  $ticketStmt = $con->prepare("SELECT * FROM tickets WHERE ticket_id = ?");
+  if (!$ticketStmt) {
+    http_response_code(500);
+    exit('Unable to load ticket.');
+  }
+  $ticketStmt->bind_param("i", $ticket_id);
+  if (!$ticketStmt->execute()) {
+    $ticketStmt->close();
+    http_response_code(500);
+    exit('Unable to load ticket.');
+  }
+  $result = $ticketStmt->get_result();
+  $row = $result->fetch_assoc();
+  $ticketStmt->close();
+  if ($row) {
+      if (($user_role === 'client' && (int) $row['user_id'] !== (int) $user_id)
+          || ($user_role === 'technician' && (int) $row['technician'] !== (int) $user_id)) {
+        http_response_code(403);
+        exit('Forbidden.');
+      }
       $users_id = $row['user_id'];
       $ticket_title = $row['title'];
       $project_id = $row['category_id'];
@@ -107,9 +135,9 @@ if (isset($_GET['ticketID'])) {
               $dp_type = $rowqp['profile_type'];
               if (empty($profile_dp)) {
                 $profile_dp = file_get_contents('images/Default_pfp.png');
-              }
             }
           }
+        }
         }
       } else {
         $profile_dp = file_get_contents('images/Default_pfp.png');
@@ -117,7 +145,6 @@ if (isset($_GET['ticketID'])) {
         $profile_fname = 'Deleted';
       }
     }
-  }
 } else {
   header('location:list.php');
 }
@@ -262,7 +289,10 @@ if (isset($_GET['ticketID'])) {
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
 
-                  <li><a href="actions.php?ticketID=<?= $ticket_id ?>&usersID=<?= $users_id ?>" class="dropdown-item" type="button">
+                  <li><form method="post" action="actions.php" class="m-0">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8') ?>">
+                    <input type="hidden" name="ticketID" value="<?= (int) $ticket_id ?>">
+                    <button class="dropdown-item" type="submit">
                       <?php if ($ticket_status == 'In progress') { ?>
                         <i style="color:rgb(140, 136, 102); font-size:.9rem" class="ri-close-circle-fill"></i> Mark as closed
                       <?php } else if ($ticket_status == 'Open') {
@@ -274,7 +304,8 @@ if (isset($_GET['ticketID'])) {
                         <i style="color:darkolivegreen; font-size:.9rem" class="ri-checkbox-circle-fill"></i> Mark as open
                       <?php
                       } ?>
-                    </a></li>
+                    </button>
+                  </form></li>
 
 
 
@@ -364,6 +395,7 @@ if (isset($_GET['ticketID'])) {
                 <div style="width: 100%;">
 
                   <form id="ticket-comment-form">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="users_id" value="<?= $user_id ?>">
                     <input type="hidden" name="comment_ticket_id" value="<?= $ticket_id ?>">
                     <div>
@@ -505,7 +537,7 @@ if (isset($_GET['ticketID'])) {
                                 if ($images > 1) {
                                   echo 'class="d-none" ';
                                 }
-                                echo 'href="../../files/ticket/' . $comment_file . '"><img class="attached-files" src="../../files/ticket/' . $comment_file . '">';
+                                echo 'href="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '&amp;inline=1" target="_blank" rel="noopener"><img class="attached-files" src="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '&amp;inline=1">';
                                 if ($comment_image_count > 1) {
                             ?><span class="more-span">+<?= $comment_image_count - 1; ?> More</span><?php
                                                                                                   }
@@ -537,7 +569,7 @@ if (isset($_GET['ticketID'])) {
                             <?php
                               // Display non-image files
                               foreach ($non_image_files as $file) {
-                                echo '<a target="_blank" class="files" href="../../files/ticket/' . $file['file_name'] . '">' . $file['file_name'] . '</a><br>';
+                                echo '<a target="_blank" rel="noopener" class="files" href="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '">' . htmlspecialchars($file['file_name'], ENT_QUOTES, 'UTF-8') . '</a><br>';
                               }
                             ?>
                           </div>
@@ -616,7 +648,7 @@ if (isset($_GET['ticketID'])) {
                       if ($images > 1) {
                         echo 'class="d-none" ';
                       }
-                      echo 'href="../../files/ticket/' . $ticket_file . '"><img class="attached-files" src="../../files/ticket/' . $ticket_file . '">';
+                      echo 'href="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '&amp;inline=1" target="_blank" rel="noopener"><img class="attached-files" src="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '&amp;inline=1">';
                       if ($image_count > 1) {
                   ?><span class="more-span">+<?= $image_count - 1; ?> More</span><?php
                                                                                 }
@@ -633,7 +665,7 @@ if (isset($_GET['ticketID'])) {
                   <?php
                     // Display non-image files
                     foreach ($non_image_files as $file) {
-                      echo '<a target="_blank" class="files" href="../../files/ticket/' . $file['file_name'] . '">' . $file['file_name'] . '</a><br>';
+                      echo '<a target="_blank" rel="noopener" class="files" href="file.php?fileID=' . (int) $file['id'] . '&amp;ticketID=' . (int) $ticket_id . '">' . htmlspecialchars($file['file_name'], ENT_QUOTES, 'UTF-8') . '</a><br>';
                     }
                   ?>
                 </div>
@@ -709,6 +741,7 @@ if (isset($_GET['ticketID'])) {
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <form id="evaluateTechnicianForm">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="ticketId" id="ticketId" value="<?= $ticket_id ?>">
           <input type="hidden" name="ticketTechnician" id="ticketTechnician" value="<?= $ticket_technician ?>">
           <input type="hidden" name="ticketClient" id="ticketClient" value="<?= $user_id ?>">

@@ -4,6 +4,7 @@ session_start();
 include("../includes/connections.php");
 
 require '../vendor/autoload.php'; // If using Composer
+require_once '../includes/smtp_config.php';
 
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -84,16 +85,11 @@ function sendVerificationEmail($email, $token, $name) {
     
     try {
         
-        $mail->isSMTP();
-        $mail->Host = 'smtp.gmail.com';
-        $mail->SMTPAuth = true;
-        $mail->Username = 'ticketing407@gmail.com'; 
-        $mail->Password = 'dupznnyisjprtwow'; 
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port = 587;
+        if (!configureTicketingMailer($mail)) {
+            return false;
+        }
 
         // Recipients
-        $mail->setFrom('noreply@yourdomain.com', 'Your App Name');
         $mail->addAddress($email, $name);
 
         // Content
