@@ -10,7 +10,7 @@ if (!empty($_SESSION['logged_in'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
+$user_role = normalizeUserRole((string) $_SESSION['role']);
 
 
 
@@ -532,7 +532,7 @@ if (isset($_GET['id'])) {
                       ?>    
                                                 <span style='font-size:10px!important' class="badge <?= $ticket_status ?>"><?= $ticket_status ?></span>
                                                     <?php
-                                                    if ($ticket_status == 'Open' && $user_role == 'admin' || $ticket_status == 'Open' && $user_role == 'super_admin') {
+                                                    if ($ticket_status == 'Open' && isManagementRole($user_role)) {
                                                     ?>
                                                         &nbsp;&nbsp;<button data-ticket-id='<?= $ticket_id ?>' style="padding:0px 6px; border-radius:2px" class="btn btn-dark moveTicket"><i class="ri-share-forward-line"></i></button>
                                                     <?php
@@ -613,7 +613,7 @@ if (isset($_GET['id'])) {
 
                                     <?php
 
-                                    $queryMove = "SELECT * FROM users right join users_info on users.user_id = users_info.user_id where role = 'technician' order by users_info.expertise";
+                                    $queryMove = "SELECT * FROM users right join users_info on users.user_id = users_info.user_id where role = 'clerk' order by users_info.expertise";
                                     $resultMove = mysqli_query($con, $queryMove);
                                     if (mysqli_num_rows($resultMove) > 0) {
                                         while ($rowMove = $resultMove->fetch_assoc()) {

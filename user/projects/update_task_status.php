@@ -5,7 +5,7 @@ include('../../includes/connections.php');
 if (isset($_POST['task_id'], $_POST['new_status'])) {
     $user_role = $_SESSION['role'] ?? '';
     $user_id = (int) ($_SESSION['user_id'] ?? 0);
-    if (!in_array($user_role, ['admin', 'super_admin', 'technician'], true)) {
+    if (!isManagementRole((string) $user_role)) {
         http_response_code(403);
         exit('Forbidden');
     }
@@ -17,15 +17,11 @@ if (isset($_POST['task_id'], $_POST['new_status'])) {
         exit('Invalid status');
     }
 
-    $access_sql = "SELECT status FROM projects_task WHERE task_id = $taskId";
-    if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-        $access_sql .= " AND EXISTS (SELECT 1 FROM project_shares
-            WHERE project_shares.project_id = projects_task.project_id
-            AND project_shares.user_id = $user_id)";
-    }
+    $access_sql = "SELECT projects_task.status, projects_task.project_id
+        FROM projects_task WHERE task_id = $taskId";
     $access = mysqli_query($con, $access_sql);
     $task = $access ? mysqli_fetch_assoc($access) : null;
-    if (!$task) {
+    if (!$task || !canAccessProject($con, (int) $task['project_id'], (string) $user_role, $user_id)) {
         http_response_code(403);
         exit('Forbidden');
     }

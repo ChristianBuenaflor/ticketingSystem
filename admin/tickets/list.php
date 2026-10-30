@@ -8,7 +8,7 @@ if (empty($_SESSION['csrf_token'])) {
 $csrf_token = $_SESSION['csrf_token'];
 
 if (!empty($_SESSION['logged_in'])) {
-  if($_SESSION['role'] != 'super_admin'){
+  if(!isManagementRole((string) ($_SESSION['role'] ?? ''))){
     header("location:../../user/dashboard/dashboard.php");
     exit;
   }
@@ -24,13 +24,13 @@ $quserP = "Select * from users where user_id = $user_id";
 $resultuserP = mysqli_query($con, $quserP);
 if (mysqli_num_rows($resultuserP) > 0) {
     while ($rowuP = $resultuserP->fetch_assoc()) {
-        $userRole = $rowuP['role'];
+        $userRole = normalizeUserRole($rowuP['role']);
     }
 }
 
 
 
-if($userRole == 'super_admin'){
+if(isManagementRole($userRole)){
     $userProfile = file_get_contents('images/adminpfp.png');
 }
 
@@ -64,9 +64,9 @@ if($userRole == 'super_admin'){
 
 
         <div class="row mt-4 card shadow-sm">
-          <div class="card-header d-flex <?php if($userRole == 'super_admin'){ echo 'py-4'; } ?>" style="justify-content: space-between;">
+          <div class="card-header d-flex <?php if(isManagementRole($userRole)){ echo 'py-4'; } ?>" style="justify-content: space-between;">
             <h6>User - Tickets</h6>
-            <?php if($userRole != 'super_admin'){ ?>
+            <?php if(isManagementRole($userRole)){ ?>
             <button class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addTicketM"><i class="ri-add-circle-fill"></i> Add Ticket</button>
           <?php } ?>
           </div>
@@ -147,7 +147,7 @@ if($userRole == 'super_admin'){
                       <td class="td<?= $ticket_id ?>"><?= $last_activity ?></td>
                       <td class="td<?= $ticket_id ?>" style="position:relative"><span class="badge <?= $ticket_status ?>"><?= $ticket_status ?></span>
                         <?php
-                        if ($tickets_userID == $user_id || $userRole == 'super_admin') {
+                        if ($tickets_userID == $user_id || isManagementRole($userRole)) {
                         ?>
                           <!-- Delete Button -->
                           <div class="btn-group dropstart" style="padding:0; position:absolute; top:0; right:12px">
@@ -155,7 +155,7 @@ if($userRole == 'super_admin'){
                               <i class="ri-more-2-line"></i>
                             </button>
                             <ul class="dropdown-menu mt-1" style="border-radius: 0; padding:0">
-<?php if($userRole!='super_admin'){ ?>
+<?php if(isManagementRole($userRole)){ ?>
                               <a href="#" class="updateTicket" data-ticket-id='<?= $ticket_id ?>'>
                                 <li style="font-size:.7rem; padding:6px 12px;" class="dropdown-item"><i style="font-weight: 1000; color:darkorange" class="ri-file-edit-line"></i> UPDATE TICKET</li>
                               </a>

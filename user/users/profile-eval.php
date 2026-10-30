@@ -3,13 +3,17 @@ include("../../includes/connections.php");
 session_start();
 
 if (!empty($_SESSION['logged_in'])) {
+    if (!isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+        http_response_code(403);
+        exit('Forbidden.');
+    }
 } else {
     header("location:../../index.php");
     die;
 }
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
+$user_role = normalizeUserRole((string) $_SESSION['role']);
 
 
 $queryDateMonth = "Select * from evaluation_date where user_id = $user_id";

@@ -112,6 +112,7 @@ INSERT INTO `files` (`id`, `file_name`, `file_type`, `file_size`) VALUES
 
 CREATE TABLE `projects` (
   `project_id` int(11) NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
   `project_title` varchar(255) NOT NULL,
   `project_description` varchar(250) NOT NULL,
   `date_start` varchar(50) NOT NULL,

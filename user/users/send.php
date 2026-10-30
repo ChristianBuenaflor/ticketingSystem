@@ -3,6 +3,7 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
 session_start();
+require_once __DIR__ . '/../../includes/role_permissions.php';
 require_once __DIR__ . '/../../includes/phpmailer/src/Exception.php';
 require_once __DIR__ . '/../../includes/phpmailer/src/PHPMailer.php';
 require_once __DIR__ . '/../../includes/phpmailer/src/SMTP.php';
@@ -10,7 +11,7 @@ require_once __DIR__ . '/../../includes/smtp_config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST'
     || empty($_SESSION['logged_in'])
-    || !in_array($_SESSION['role'] ?? '', ['admin', 'super_admin'], true)) {
+    || !isManagementRole((string) ($_SESSION['role'] ?? ''))) {
     http_response_code(403);
     exit('Forbidden.');
 }

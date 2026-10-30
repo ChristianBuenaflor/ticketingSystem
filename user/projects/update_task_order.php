@@ -5,19 +5,15 @@ include('../../includes/connections.php');
 if(isset($_POST['taskId'], $_POST['newOrder'])) {
     $user_role = $_SESSION['role'] ?? '';
     $user_id = (int) ($_SESSION['user_id'] ?? 0);
-    if (!in_array($user_role, ['admin', 'super_admin', 'technician'], true)) {
+    if (!isManagementRole((string) $user_role)) {
         http_response_code(403);
         exit('Forbidden');
     }
     $taskId = (int) $_POST['taskId'];
-    $access_sql = "SELECT task_id FROM projects_task WHERE task_id = $taskId";
-    if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-        $access_sql .= " AND EXISTS (SELECT 1 FROM project_shares
-            WHERE project_shares.project_id = projects_task.project_id
-            AND project_shares.user_id = $user_id)";
-    }
+    $access_sql = "SELECT task_id, project_id FROM projects_task WHERE task_id = $taskId";
     $access = mysqli_query($con, $access_sql);
-    if (!$access || mysqli_num_rows($access) === 0) {
+    $task = $access ? mysqli_fetch_assoc($access) : null;
+    if (!$task || !canAccessProject($con, (int) $task['project_id'], (string) $user_role, $user_id)) {
         http_response_code(403);
         exit('Forbidden');
     }

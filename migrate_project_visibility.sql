@@ -1,0 +1,2 @@
+ALTER TABLE projects
+ADD COLUMN created_by INT NULL DEFAULT NULL AFTER project_id;

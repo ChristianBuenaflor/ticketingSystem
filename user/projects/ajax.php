@@ -4,30 +4,69 @@ session_start();
 include("../../includes/connections.php");
 
 $user_role = $_SESSION['role'] ?? '';
+$user_role = normalizeUserRole((string) $user_role);
 $user_id = (int) ($_SESSION['user_id'] ?? 0);
 
+if (empty($_SESSION['logged_in']) || $user_id < 1) {
+  http_response_code(401);
+  exit('Authentication required.');
+}
+if (!in_array($user_role, ['admin', 'director', 'head', 'clerk'], true)) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
+
+$requestedProjectId = (int) (
+  $_GET['shareusers']
+  ?? $_GET['updateid']
+  ?? $_POST['project_id']
+  ?? $_POST['project_comment_project_id']
+  ?? $_POST['m_projectId']
+  ?? 0
+);
+$requestedTaskId = (int) (
+  $_GET['deletetaskid']
+  ?? $_GET['updatetaskid']
+  ?? $_GET['previewid']
+  ?? $_POST['comment_task_id']
+  ?? $_POST['m_previewDeleteTaskId']
+  ?? $_POST['m_taskId']
+  ?? 0
+);
+if ($requestedProjectId < 1 && $requestedTaskId > 0) {
+  $taskProjectStmt = $con->prepare('SELECT project_id FROM projects_task WHERE task_id = ?');
+  if (!$taskProjectStmt) {
+    http_response_code(500);
+    exit('Unable to verify project access.');
+  }
+  $taskProjectStmt->bind_param('i', $requestedTaskId);
+  if (!$taskProjectStmt->execute()) {
+    $taskProjectStmt->close();
+    http_response_code(500);
+    exit('Unable to verify project access.');
+  }
+  $taskProject = $taskProjectStmt->get_result()->fetch_assoc();
+  $taskProjectStmt->close();
+  $requestedProjectId = (int) ($taskProject['project_id'] ?? 0);
+}
+if ($requestedProjectId > 0
+  && !canAccessProject($con, $requestedProjectId, $user_role, $user_id)) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
+
 if (isset($_GET['shareusers']) || isset($_POST['share-project']) || isset($_POST['unshare-project'])) {
+  if (!isManagementRole($user_role)) {
+    http_response_code(403);
+    echo json_encode(['status' => 403, 'message' => 'Forbidden.']);
+    exit;
+  }
   $project_id = (int) ($_GET['shareusers'] ?? $_POST['project_id'] ?? 0);
-  $can_manage_projects = in_array($user_role, ['admin', 'super_admin'], true);
-  $project_check = mysqli_query($con, "SELECT project_id FROM projects WHERE project_id = $project_id");
-  if (!$project_check || mysqli_num_rows($project_check) === 0) {
+  if (!canAccessProject($con, $project_id, $user_role, $user_id)) {
     http_response_code(404);
     echo json_encode(['status' => 404, 'message' => 'Project not found.']);
     exit;
   }
-  $share_access = $can_manage_projects;
-
-  if (!$share_access) {
-    $check = mysqli_query($con, "SELECT 1 FROM project_shares WHERE project_id = $project_id AND user_id = $user_id");
-    $share_access = $check && mysqli_num_rows($check) > 0;
-  }
-
-  if (!$share_access || !in_array($user_role, ['admin', 'super_admin', 'technician', 'client'], true)) {
-    http_response_code(403);
-    echo json_encode(['status' => 403, 'message' => 'You do not have access to share this project.']);
-    exit;
-  }
-
   if (isset($_POST['share-project'])) {
     $share_user_ids = $_POST['share_user_ids'] ?? [$_POST['share_user_id'] ?? 0];
     if (!is_array($share_user_ids) || !$share_user_ids) {
@@ -104,24 +143,94 @@ if (isset($_GET['shareusers']) || isset($_POST['share-project']) || isset($_POST
       exit;
     }
 
-    $stmt = mysqli_prepare($con, "DELETE FROM project_shares WHERE project_id = ? AND user_id = ?");
-    if (!$stmt) {
+    $target_stmt = mysqli_prepare(
+      $con,
+      'SELECT shared_by FROM project_shares WHERE project_id = ? AND user_id = ?'
+    );
+    if (!$target_stmt) {
       http_response_code(500);
-      echo json_encode(['status' => 500, 'message' => 'Unable to remove project sharing.']);
+      echo json_encode(['status' => 500, 'message' => 'Unable to verify project sharing.']);
       exit;
     }
-    mysqli_stmt_bind_param($stmt, 'ii', $project_id, $share_user_id);
-    if (!mysqli_stmt_execute($stmt)) {
-      mysqli_stmt_close($stmt);
+    mysqli_stmt_bind_param($target_stmt, 'ii', $project_id, $share_user_id);
+    if (!mysqli_stmt_execute($target_stmt)) {
+      mysqli_stmt_close($target_stmt);
       http_response_code(500);
-      echo json_encode(['status' => 500, 'message' => 'Unable to remove project sharing.']);
+      echo json_encode(['status' => 500, 'message' => 'Unable to verify project sharing.']);
       exit;
     }
-    $removed = mysqli_stmt_affected_rows($stmt) > 0;
-    mysqli_stmt_close($stmt);
-    if (!$removed) {
+    $target_result = mysqli_stmt_get_result($target_stmt);
+    $target_share = $target_result ? mysqli_fetch_assoc($target_result) : null;
+    mysqli_stmt_close($target_stmt);
+    if (!$target_share) {
       http_response_code(404);
       echo json_encode(['status' => 404, 'message' => 'This user is not currently shared on the project.']);
+      exit;
+    }
+    if ($user_role !== 'admin' && (int) $target_share['shared_by'] !== $user_id) {
+      http_response_code(403);
+      echo json_encode(['status' => 403, 'message' => 'You cannot remove sharing granted by another user.']);
+      exit;
+    }
+
+    $remove_user_ids = [$share_user_id];
+    for ($index = 0; $index < count($remove_user_ids); $index++) {
+      $descendants = mysqli_prepare(
+        $con,
+        'SELECT user_id FROM project_shares WHERE project_id = ? AND shared_by = ?'
+      );
+      if (!$descendants) {
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to load project sharing.']);
+        exit;
+      }
+      mysqli_stmt_bind_param($descendants, 'ii', $project_id, $remove_user_ids[$index]);
+      if (!mysqli_stmt_execute($descendants)) {
+        mysqli_stmt_close($descendants);
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to load project sharing.']);
+        exit;
+      }
+      $descendant_result = mysqli_stmt_get_result($descendants);
+      while ($descendant = mysqli_fetch_assoc($descendant_result)) {
+        $descendant_id = (int) $descendant['user_id'];
+        if (!in_array($descendant_id, $remove_user_ids, true)) {
+          $remove_user_ids[] = $descendant_id;
+        }
+      }
+      mysqli_stmt_close($descendants);
+    }
+
+    if (!mysqli_begin_transaction($con)) {
+      http_response_code(500);
+      echo json_encode(['status' => 500, 'message' => 'Unable to remove project sharing.']);
+      exit;
+    }
+    $remove_stmt = mysqli_prepare(
+      $con,
+      'DELETE FROM project_shares WHERE project_id = ? AND user_id = ?'
+    );
+    if (!$remove_stmt) {
+      mysqli_rollback($con);
+      http_response_code(500);
+      echo json_encode(['status' => 500, 'message' => 'Unable to remove project sharing.']);
+      exit;
+    }
+    foreach ($remove_user_ids as $remove_user_id) {
+      mysqli_stmt_bind_param($remove_stmt, 'ii', $project_id, $remove_user_id);
+      if (!mysqli_stmt_execute($remove_stmt)) {
+        mysqli_stmt_close($remove_stmt);
+        mysqli_rollback($con);
+        http_response_code(500);
+        echo json_encode(['status' => 500, 'message' => 'Unable to remove project sharing.']);
+        exit;
+      }
+    }
+    mysqli_stmt_close($remove_stmt);
+    if (!mysqli_commit($con)) {
+      mysqli_rollback($con);
+      http_response_code(500);
+      echo json_encode(['status' => 500, 'message' => 'Unable to remove project sharing.']);
       exit;
     }
   }
@@ -152,6 +261,7 @@ if (isset($_GET['shareusers']) || isset($_POST['share-project']) || isset($_POST
 
   $shared = [];
   $shared_query = mysqli_query($con, "SELECT users.user_id, users.role, users.email,
+      project_shares.shared_by,
       users_info.first_name, users_info.last_name, users_info.profile, users_info.profile_type
     FROM project_shares
     INNER JOIN users ON users.user_id = project_shares.user_id
@@ -174,6 +284,7 @@ if (isset($_GET['shareusers']) || isset($_POST['share-project']) || isset($_POST
       'user_id' => (int) $row['user_id'],
       'role' => $row['role'],
       'name' => trim($row['first_name'] . ' ' . $row['last_name']) ?: $row['email'],
+      'can_remove' => $user_role === 'admin' || (int) $row['shared_by'] === $user_id,
       'profile' => base64_encode($account_profile),
       'profile_type' => $account_profile_type ?: 'image/png',
     ];
@@ -187,20 +298,10 @@ if (isset($_POST['post-project-comment'])) {
 
   $comment_user_id = (int) $user_id;
   $project_id = (int) ($_POST['project_comment_project_id'] ?? 0);
-  $can_manage_projects = in_array($user_role, ['admin', 'super_admin'], true);
-  $project_access = mysqli_query($con, "SELECT project_id FROM projects WHERE project_id = $project_id");
-  if (!$project_access || mysqli_num_rows($project_access) === 0) {
-    http_response_code(404);
-    echo json_encode(['status' => 404]);
+  if (!canAccessProject($con, $project_id, $user_role, $user_id)) {
+    http_response_code(403);
+    echo json_encode(['status' => 403]);
     exit;
-  }
-  if (!$can_manage_projects) {
-    $project_access = mysqli_query($con, "SELECT project_id FROM project_shares WHERE project_id = $project_id AND user_id = $user_id");
-    if (!$project_access || mysqli_num_rows($project_access) === 0) {
-      http_response_code(403);
-      echo json_encode(['status' => 403]);
-      exit;
-    }
   }
   $comment_textarea = mysqli_real_escape_string($con, $_POST['project_comment_textarea']);
 
@@ -294,12 +395,17 @@ if (isset($_POST['post-project-comment'])) {
 
 if (isset($_POST['add-files'])) {
 
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
+  if (!isManagementRole($user_role)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
   }
   $project_id = (int) ($_POST['project_id'] ?? 0);
+  if (!canAccessProject($con, $project_id, $user_role, $user_id)) {
+    http_response_code(403);
+    echo json_encode(['status' => 403]);
+    exit;
+  }
 
   if (empty($_FILES['file_files']['tmp_name'][0])) {
     $res = [
@@ -390,18 +496,12 @@ if (isset($_POST['post-task-comment'])) {
 
   $comment_user_id = (int) $user_id;
   $comment_task_id = (int) ($_POST['comment_task_id'] ?? 0);
-  $task_access_sql = "SELECT projects_task.task_id FROM projects_task
+  $task_access_sql = "SELECT projects.project_id FROM projects_task
     INNER JOIN projects ON projects.project_id = projects_task.project_id
     WHERE projects_task.task_id = $comment_task_id";
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-    $task_access_sql .= " AND EXISTS (
-      SELECT 1 FROM project_shares
-      WHERE project_shares.project_id = projects.project_id
-      AND project_shares.user_id = $user_id
-    )";
-  }
   $task_access = mysqli_query($con, $task_access_sql);
-  if (!$task_access || mysqli_num_rows($task_access) === 0) {
+  $task_project = $task_access ? mysqli_fetch_assoc($task_access) : null;
+  if (!$task_project || !canAccessProject($con, (int) $task_project['project_id'], $user_role, $user_id)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
@@ -488,7 +588,7 @@ if (isset($_POST['post-task-comment'])) {
 
 
 if (isset($_GET['deletetaskid'])) {
-  if (!in_array($user_role, ['admin', 'super_admin', 'technician'], true)) {
+  if (!isManagementRole($user_role)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
@@ -497,11 +597,6 @@ if (isset($_GET['deletetaskid'])) {
 
   $sql = "SELECT projects_task.* FROM projects_task
     WHERE task_id = $id";
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-    $sql .= " AND EXISTS (SELECT 1 FROM project_shares
-      WHERE project_shares.project_id = projects_task.project_id
-      AND project_shares.user_id = $user_id)";
-  }
   $result = mysqli_query($con, $sql);
   $row = mysqli_fetch_assoc($result);
   if ($row) {
@@ -649,16 +744,26 @@ if (isset($_GET['deletetaskid'])) {
 
 
 if (isset($_GET['updateid'])) {
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
+  if (!isManagementRole($user_role)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
   }
   $id = (int) $_GET['updateid'];
+  if (!canAccessProject($con, $id, $user_role, $user_id)) {
+    http_response_code(403);
+    echo json_encode(['status' => 403]);
+    exit;
+  }
   $sql = "SELECT * FROM projects WHERE project_id = $id";
   $result = mysqli_query($con, $sql);
   $row = mysqli_fetch_assoc($result);
   if ($row) {
+    if (!canAccessProject($con, (int) $row['project_id'], $user_role, $user_id)) {
+      http_response_code(403);
+      echo json_encode(['status' => 403]);
+      exit;
+    }
     $start_date = $row['date_start'];
     $deadline = $row['deadline'];
     if ($start_date != '') {
@@ -680,18 +785,13 @@ if (isset($_GET['updateid'])) {
 }
 
 if (isset($_GET['updatetaskid'])) {
-  if (!in_array($user_role, ['admin', 'super_admin', 'technician'], true)) {
+  if (!isManagementRole($user_role)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
   }
   $id = (int) $_GET['updatetaskid'];
   $sql = "SELECT projects_task.* FROM projects_task WHERE task_id = $id";
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-    $sql .= " AND EXISTS (SELECT 1 FROM project_shares
-      WHERE project_shares.project_id = projects_task.project_id
-      AND project_shares.user_id = $user_id)";
-  }
   $result = mysqli_query($con, $sql);
   $row = mysqli_fetch_assoc($result);
   if ($row) {
@@ -734,14 +834,14 @@ if (isset($_GET['updatetaskid'])) {
 if (isset($_GET['previewid'])) {
   $id = (int) $_GET['previewid'];
   $sql = "SELECT projects_task.* FROM projects_task WHERE task_id = $id";
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-    $sql .= " AND EXISTS (SELECT 1 FROM project_shares
-      WHERE project_shares.project_id = projects_task.project_id
-      AND project_shares.user_id = $user_id)";
-  }
   $result = mysqli_query($con, $sql);
   $row = mysqli_fetch_assoc($result);
   if ($row) {
+    if (!canAccessProject($con, (int) $row['project_id'], $user_role, $user_id)) {
+      http_response_code(403);
+      echo json_encode(['status' => 403]);
+      exit;
+    }
     $pId = 'Task Info #' . sprintf("%04d", $row['task_id']);
     $taskDescription = $row['description'];
     $taskDescription = nl2br($taskDescription);
@@ -831,7 +931,7 @@ if (isset($_GET['previewid'])) {
         if (mysqli_num_rows($rCommenter) > 0) {
           while ($commenter_dp = $rCommenter->fetch_assoc()) {
             $commenter_profile = $commenter_dp['profile'];
-            if ($users_role == 'admin' || $users_role == 'super_admin') {
+            if (isManagementRole($users_role)) {
               $task_commenter_name = $commenter_dp['first_name'] . ' ' . $commenter_dp['last_name'] . ' (admin)';
             } else {
               $task_commenter_name = $commenter_dp['first_name'] . ' ' . $commenter_dp['last_name'];
@@ -910,18 +1010,24 @@ if (isset($_GET['previewid'])) {
 
 
 if (isset($_POST['previewDeleteTaskF'])) {
-  if (!in_array($user_role, ['admin', 'super_admin', 'technician'], true)) {
+  if (!isManagementRole($user_role)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
   }
   $m_previewDeleteTaskId = (int) ($_POST['m_previewDeleteTaskId'] ?? 0);
-  $sql = "DELETE FROM projects_task WHERE task_id = $m_previewDeleteTaskId";
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-    $sql .= " AND EXISTS (SELECT 1 FROM project_shares
-      WHERE project_shares.project_id = projects_task.project_id
-      AND project_shares.user_id = $user_id)";
+  $taskProjectResult = mysqli_query(
+    $con,
+    "SELECT project_id FROM projects_task WHERE task_id = $m_previewDeleteTaskId"
+  );
+  $taskProject = $taskProjectResult ? mysqli_fetch_assoc($taskProjectResult) : null;
+  if (!$taskProject
+    || !canAccessProject($con, (int) $taskProject['project_id'], $user_role, $user_id)) {
+    http_response_code(403);
+    echo json_encode(['status' => 403]);
+    exit;
   }
+  $sql = "DELETE FROM projects_task WHERE task_id = $m_previewDeleteTaskId";
   $result = mysqli_query($con, $sql);
 
   if (!$result || mysqli_affected_rows($con) !== 1) {
@@ -953,7 +1059,7 @@ if (isset($_POST['previewDeleteTaskF'])) {
 
 
 if (isset($_POST['add-task'])) {
-  if (!in_array($user_role, ['admin', 'super_admin', 'technician'], true)) {
+  if (!isManagementRole($user_role)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
@@ -961,14 +1067,7 @@ if (isset($_POST['add-task'])) {
   $users_id = (int) $user_id;
   $project_id = (int) ($_POST['project_id'] ?? 0);
   $m_taskId = (int) ($_POST['m_taskId'] ?? 0);
-  $project_access_sql = "SELECT project_id FROM projects WHERE project_id = $project_id";
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-    $project_access_sql .= " AND EXISTS (SELECT 1 FROM project_shares
-      WHERE project_shares.project_id = projects.project_id
-      AND project_shares.user_id = $user_id)";
-  }
-  $project_access = mysqli_query($con, $project_access_sql);
-  if (!$project_access || mysqli_num_rows($project_access) === 0) {
+  if (!canAccessProject($con, $project_id, $user_role, $user_id)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
@@ -976,11 +1075,6 @@ if (isset($_POST['add-task'])) {
   if ($m_taskId > 0) {
     $task_access_sql = "SELECT task_id FROM projects_task
       WHERE task_id = $m_taskId AND project_id = $project_id";
-    if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-      $task_access_sql .= " AND EXISTS (SELECT 1 FROM project_shares
-        WHERE project_shares.project_id = projects_task.project_id
-        AND project_shares.user_id = $user_id)";
-    }
     $task_access = mysqli_query($con, $task_access_sql);
     if (!$task_access || mysqli_num_rows($task_access) === 0) {
       http_response_code(403);
@@ -1180,8 +1274,7 @@ if (isset($_POST['add-task'])) {
 
 
 if (isset($_POST['add-project'])) {
-
-  if (!in_array($user_role, ['admin', 'super_admin'], true)) {
+  if (!isManagementRole($user_role)) {
     http_response_code(403);
     echo json_encode(['status' => 403]);
     exit;
@@ -1286,11 +1379,11 @@ if (isset($_POST['add-project'])) {
 
     if (!empty($uploadedFiles)) {
       $fileIdsString = implode(',', $uploadedFiles);
-      $query = "INSERT INTO projects (project_title,project_description, date_start, deadline, files, status) 
-    VALUES ('$project_title', '$project_description', '$start_date', '$deadline', '$fileIdsString', '$project_status')";
+      $query = "INSERT INTO projects (created_by, project_title, project_description, date_start, deadline, files, status)
+    VALUES ($user_id, '$project_title', '$project_description', '$start_date', '$deadline', '$fileIdsString', '$project_status')";
     } else {
-      $query = "INSERT INTO projects (project_title,project_description, date_start, deadline, status) 
-  VALUES ('$project_title', '$project_description', '$start_date', '$deadline', '$project_status')";
+      $query = "INSERT INTO projects (created_by, project_title, project_description, date_start, deadline, status)
+  VALUES ($user_id, '$project_title', '$project_description', '$start_date', '$deadline', '$project_status')";
     }
 
 

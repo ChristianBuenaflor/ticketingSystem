@@ -9,12 +9,12 @@ if (!empty($_SESSION['logged_in'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
+$user_role = normalizeUserRole((string) $_SESSION['role']);
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
-if (!in_array($user_role, ['admin', 'super_admin', 'client', 'technician'], true)) {
+if (!in_array($user_role, ['admin', 'director', 'head', 'clerk'], true)) {
   http_response_code(403);
   exit('Forbidden.');
 }
@@ -57,8 +57,7 @@ if (isset($_GET['ticketID'])) {
   $row = $result->fetch_assoc();
   $ticketStmt->close();
   if ($row) {
-      if (($user_role === 'client' && (int) $row['user_id'] !== (int) $user_id)
-          || ($user_role === 'technician' && (int) $row['technician'] !== (int) $user_id)) {
+      if (!canAccessTicket($row, $user_role, (int) $user_id)) {
         http_response_code(403);
         exit('Forbidden.');
       }
@@ -118,7 +117,7 @@ if (isset($_GET['ticketID'])) {
 
       if (!empty($roles)) {
 
-        if ($roles == 'super_admin') {
+        if (isManagementRole($roles)) {
           $profile_dp = file_get_contents('images/Default_pfp.png');
           $profile_lname = 'Administrator';
           $profile_fname = '';
@@ -276,12 +275,12 @@ if (isset($_GET['ticketID'])) {
 
 
         <div class="row mt-4 mb-5 card shadow-sm">
-          <div class="card-header d-flex" style="justify-content: space-between;<?php if ($user_role == 'client' && $ticket_status != 'Closed') { ?> padding-top:28px; padding-bottom:28px; <?php } ?>">
+          <div class="card-header d-flex" style="justify-content: space-between;          <?php if (!isManagementRole($user_role) && $ticket_status != 'Closed') { ?> padding-top:28px; padding-bottom:28px; <?php } ?>">
             <h6>Ticket #<?= sprintf("%04d", $ticket_id); ?> - <?= $ticket_title ?></h6>
 
 
             <?php
-            if ($user_role != 'client') {
+            if (isManagementRole($user_role)) {
             ?>
               <div class="btn-group">
                 <button type="button" class="btn btn-action" data-bs-toggle="dropdown" aria-expanded="false">
@@ -299,7 +298,7 @@ if (isset($_GET['ticketID'])) {
                       ?>
                         <i style="color:rgb(140, 136, 102); font-size:.9rem" class="ri-loader-2-line"></i> Mark as in progress
                       <?php
-                      } else {
+                      } else if (isManagementRole($user_role)) {
                       ?>
                         <i style="color:darkolivegreen; font-size:.9rem" class="ri-checkbox-circle-fill"></i> Mark as open
                       <?php
@@ -343,9 +342,6 @@ if (isset($_GET['ticketID'])) {
 
 
                 &nbsp;&nbsp;
-                <button type="button" class="btn btn-action evaluateTechnician" data-bs-toggle="modal" data-bs-target="#evaluateTechnician" aria-expanded="false">
-                  <i class="ri-survey-line"></i>&nbsp;&nbsp; Evaluate</button>
-              
                 </div>
                 </div>
 <?php
@@ -476,10 +472,10 @@ if (isset($_GET['ticketID'])) {
                       </div>
                       <div class="d-block">
                         <div class="d-flex gap-3 mb-1">
-                          <span><b><?= $commenter_fname . " " . $commenter_lname ?><?php if ($users_role == 'admin' || $users_role == 'super_admin') { ?> (admin) <?php } ?></b></span><span><?= $comment_date ?></span>
+                          <span><b><?= $commenter_fname . " " . $commenter_lname ?><?php if (isManagementRole($users_role)) { ?> (admin) <?php } ?></b></span><span><?= $comment_date ?></span>
 
                           <?php
-                          if ($user_role == 'admin' || $user_role == 'super_admin') {
+                          if (isManagementRole($user_role)) {
                           ?>
                             <!-- Delete Button -->
                             <div class="btn-group dropstart" style="padding:0; position:absolute; top:0; right:12px">

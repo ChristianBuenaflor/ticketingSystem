@@ -1,6 +1,7 @@
 <?php
 
 include("../includes/connections.php");
+require_once("../includes/role_permissions.php");
 session_start();
 
 
@@ -21,27 +22,35 @@ if (isset($_POST['login-submit']))
           $user_data = mysqli_fetch_assoc($result);
           if (password_verify($login_password, $user_data['password'])) {
     
-              $role = $user_data['role'];
-              $_SESSION['role'] = $user_data['role'];
+              $role = normalizeUserRole((string) $user_data['role']);
+              if ($role === '') {
+                echo json_encode(['status' => 101]);
+                return;
+              }
+
+              if ($user_data['role'] !== $role) {
+                $roleStmt = $con->prepare("UPDATE users SET role = ? WHERE user_id = ?");
+                if (!$roleStmt) {
+                  http_response_code(500);
+                  exit('Unable to update account role.');
+                }
+                $roleStmt->bind_param('si', $role, $user_data['user_id']);
+                if (!$roleStmt->execute()) {
+                  $roleStmt->close();
+                  http_response_code(500);
+                  exit('Unable to update account role.');
+                }
+                $roleStmt->close();
+              }
+
+              $_SESSION['role'] = $role;
               $_SESSION['user_id'] = $user_data['user_id'];
               $_SESSION['logged_in'] = true;
-              if ($role == "super_admin") {
-                  $res = [
-                    'status' => 99,
-                    'return_url' => urlencode($return_url),
-                  ];
-                  echo json_encode($res);
-                  return;  
-               
-                 
-              }else if ($role == "client" || $role == 'technician' || $role == 'admin') {
-                $res = [
-                  'status' => 99,
-                  'return_url' => urlencode($return_url),
-                ];
-                echo json_encode($res);
-                return;
-            }
+              echo json_encode([
+                'status' => 99,
+                'return_url' => urlencode($return_url),
+              ]);
+              return;
           }else{
             $res = [
               'status' => 101,

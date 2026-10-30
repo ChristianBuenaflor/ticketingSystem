@@ -1,5 +1,50 @@
 <?php
 include("../../includes/connections.php");
+session_start();
+
+if (empty($_SESSION['logged_in']) || !isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
+$creatorId = (int) ($_SESSION['user_id'] ?? 0);
+$actorRole = normalizeUserRole((string) ($_SESSION['role'] ?? ''));
+$requestedProjectId = (int) (
+  $_GET['updateid']
+  ?? $_POST['project_id']
+  ?? $_POST['project_comment_project_id']
+  ?? $_POST['m_projectId']
+  ?? 0
+);
+$requestedTaskId = (int) (
+  $_GET['deletetaskid']
+  ?? $_GET['updatetaskid']
+  ?? $_GET['previewid']
+  ?? $_POST['comment_task_id']
+  ?? $_POST['m_previewDeleteTaskId']
+  ?? $_POST['m_taskId']
+  ?? 0
+);
+if ($requestedProjectId < 1 && $requestedTaskId > 0) {
+  $taskProjectStmt = $con->prepare('SELECT project_id FROM projects_task WHERE task_id = ?');
+  if (!$taskProjectStmt) {
+    http_response_code(500);
+    exit('Unable to verify project access.');
+  }
+  $taskProjectStmt->bind_param('i', $requestedTaskId);
+  if (!$taskProjectStmt->execute()) {
+    $taskProjectStmt->close();
+    http_response_code(500);
+    exit('Unable to verify project access.');
+  }
+  $taskProject = $taskProjectStmt->get_result()->fetch_assoc();
+  $taskProjectStmt->close();
+  $requestedProjectId = (int) ($taskProject['project_id'] ?? 0);
+}
+if ($requestedProjectId > 0
+  && !canAccessProject($con, $requestedProjectId, $actorRole, $creatorId)) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
 
 if (isset($_POST['post-project-comment'])) {
 
@@ -976,11 +1021,11 @@ if (isset($_POST['add-project'])) {
 
   if (!empty($uploadedFiles)) {
     $fileIdsString = implode(',', $uploadedFiles); 
-    $query = "INSERT INTO projects (project_title,project_description, date_start, deadline, files, status) 
-    VALUES ('$project_title', '$project_description', '$start_date', '$deadline', '$fileIdsString', '$project_status')";
+    $query = "INSERT INTO projects (created_by, project_title, project_description, date_start, deadline, files, status)
+    VALUES ($creatorId, '$project_title', '$project_description', '$start_date', '$deadline', '$fileIdsString', '$project_status')";
 } else {
-  $query = "INSERT INTO projects (project_title,project_description, date_start, deadline, status) 
-  VALUES ('$project_title', '$project_description', '$start_date', '$deadline', '$project_status')";
+  $query = "INSERT INTO projects (created_by, project_title, project_description, date_start, deadline, status)
+  VALUES ($creatorId, '$project_title', '$project_description', '$start_date', '$deadline', '$project_status')";
 }
 
 
@@ -1023,10 +1068,6 @@ if (isset($_POST['add-project'])) {
 
   mysqli_close($con);
 }
-
-
-
-
 
 
 

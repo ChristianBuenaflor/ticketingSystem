@@ -14,13 +14,18 @@ if (!empty($_SESSION['logged_in'])) {
   die;
 }
 
+if (!isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
+
 $user_id = $_SESSION['user_id'];
 
 $quserP = "Select * from users where user_id = $user_id";
 $resultuserP = mysqli_query($con, $quserP);
 if (mysqli_num_rows($resultuserP) > 0) {
   while ($rowuP = $resultuserP->fetch_assoc()) {
-    $userRole = $rowuP['role'];
+    $userRole = normalizeUserRole($rowuP['role']);
   }
 }
 
@@ -90,11 +95,11 @@ if (isset($_GET['list'])) {
 
 
         <div class="row mt-4 card shadow-sm">
-          <div class="card-header d-flex" style="justify-content: space-between; background-color:#a60212;"<?php if ($userRole == 'client' || $userRole == 'technician') {
+          <div class="card-header d-flex" style="justify-content: space-between; background-color:#a60212;"<?php if (!isManagementRole($userRole)) {
                                                                                     echo ' padding-top:28px; padding-bottom:28px;';
                                                                                   } ?>">
             <h6 style="color:#ffffff;">Users</h6>
-            <?php if ($userRole == 'admin' || $userRole == 'super_admin') { ?>
+            <?php if (isManagementRole($userRole)) { ?>
               <button class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addUserM"><i class="ri-add-circle-fill"></i> Add User</button>
             <?php } ?>
           </div>
@@ -109,9 +114,10 @@ if (isset($_GET['list'])) {
                 <select class="roles_filter" id="rolesFilter">
                   <option value="">-</option>
                   <option value=" ">All</option>
-                  <option value="client">Clients</option>
-                  <option value="technician">Technicians</option>
-                  <option value="admin">Admins</option>
+                  <option value="admin">Admin</option>
+                  <option value="director">Director</option>
+                  <option value="head">Head</option>
+                  <option value="clerk">Clerk</option>
                 </select>
               </div>
             <?php } ?>
@@ -130,20 +136,11 @@ if (isset($_GET['list'])) {
               </thead>
               <tbody>
                 <?php
-                if (!empty($list) && $list == 'admin') {
-                  $list = null;
-                  $query = "SELECT * FROM users where role = 'admin'";
-                  $result = mysqli_query($con, $query);
-                } else if (!empty($list) && $list == 'technician') {
-                  $list = null;
-                  $query = "SELECT * FROM users where role = 'technician'";
-                  $result = mysqli_query($con, $query);
-                } else if (!empty($list) && $list == 'client') {
-                  $list = null;
-                  $query = "SELECT * FROM users where role = 'client'";
+                if (in_array($list ?? '', ['admin', 'director', 'head', 'clerk'], true)) {
+                  $query = "SELECT * FROM users WHERE role = '$list'";
                   $result = mysqli_query($con, $query);
                 } else {
-                  $query = "SELECT * FROM users where role != 'super_admin'";
+                  $query = "SELECT * FROM users";
                   $result = mysqli_query($con, $query);
                 }
 
@@ -183,9 +180,9 @@ if (isset($_GET['list'])) {
                         <td><?php if ($job_title == '') {
                               echo '-';
                             } else { ?><?= $skype ?><?php } ?></td>
-                        <td class="position-relative"><?= $roles ?>
+                        <td class="position-relative"><?= htmlspecialchars(ucfirst(normalizeUserRole($roles)), ENT_QUOTES, 'UTF-8') ?>
                           <?php
-                          if ($userRole == 'admin' && $users_id != $user_id || $userRole == 'super_admin') {
+                          if (isManagementRole($userRole) && $users_id != $user_id) {
                           ?>
                             <!-- Delete Button -->
                             <div class="btn-group dropstart" style="padding:0; position:absolute; top:20px; right:12px">
@@ -291,9 +288,10 @@ if (isset($_GET['list'])) {
               <div class="col">
                 <select name="user_type" id="user_type" class="select_userType selectpicker">
                   <option value="">-</option>
-                  <option value="client">Client</option>
-                  <option value="technician">Technician</option>
                   <option value="admin">Admin</option>
+                  <option value="director">Director</option>
+                  <option value="head">Head</option>
+                  <option value="clerk">Clerk</option>
                 </select>
               </div>
             </div>
@@ -336,7 +334,7 @@ if (isset($_GET['list'])) {
                 <span id="select-userType" class="alert alert-warning d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> Please select user type</span>
                 <span id="invalid-email" class="alert alert-danger d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> Invalid email address!</span>
                 <span id="existed-email" class="alert alert-danger d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> User with the email address already exist.</span>
-                <span id="invalid-expertise" class="alert alert-danger d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> Select technician expertise!</span>
+                <span id="invalid-expertise" class="alert alert-danger d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> Select Clerk expertise!</span>
 
               </div>
               <div>
@@ -380,7 +378,7 @@ if (isset($_GET['list'])) {
 <script>
   $(document).ready(function() {
     function toggleExpertiseRow() {
-      if ($('#user_type').val() === 'technician') {
+      if ($('#user_type').val() === 'clerk') {
         $('.expertise-row').removeClass('d-none');
       } else {
         $('.expertise-row').addClass('d-none');

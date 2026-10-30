@@ -17,7 +17,7 @@ if (isset($_GET['action']) && $_GET['action'] == 'get_technicians' && isset($_GE
         "SELECT u.user_id, ui.first_name, ui.last_name
          FROM users u
          JOIN users_info ui ON u.user_id = ui.user_id
-         WHERE u.role = 'technician' AND ui.expertise = ?
+         WHERE u.role = 'clerk' AND ui.expertise = ?
          ORDER BY ui.last_name"
     );
     if (!$stmt) {
@@ -43,14 +43,14 @@ if (isset($_GET['action']) && $_GET['action'] == 'get_technicians' && isset($_GE
 }
 
 if (empty($_SESSION['logged_in']) || (int) ($_SESSION['user_id'] ?? 0) < 1
-    || !in_array($_SESSION['role'] ?? '', ['admin', 'super_admin', 'client', 'technician'], true)) {
+    || !in_array(normalizeUserRole((string) ($_SESSION['role'] ?? '')), ['admin', 'director', 'head', 'clerk'], true)) {
     http_response_code(401);
     echo json_encode(['status' => 401, 'message' => 'Authentication required.']);
     exit;
 }
 
 $authenticatedUserId = (int) $_SESSION['user_id'];
-$user_role = (string) $_SESSION['role'];
+$user_role = normalizeUserRole((string) $_SESSION['role']);
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -81,8 +81,7 @@ if (isset($_GET['updateid'])) {
     $row = $result->fetch_assoc();
     $stmt->close();
     if ($row) {
-        if (($user_role === 'client' && (int) $row['user_id'] !== $authenticatedUserId)
-            || ($user_role === 'technician' && (int) $row['technician'] !== $authenticatedUserId)) {
+        if (!canAccessTicket($row, $user_role, $authenticatedUserId)) {
             http_response_code(403);
             echo json_encode(['status' => 403, 'message' => 'Forbidden.']);
             exit;
@@ -104,36 +103,11 @@ if (isset($_GET['updateid'])) {
 
 if (isset($_POST['post-ticket'])) {
     $user_id = $authenticatedUserId;
-    if ($user_role === 'client') {
-        $verifiedStmt = $con->prepare("SELECT verified FROM users WHERE user_id = ?");
-        if (!$verifiedStmt) {
-            http_response_code(500);
-            echo json_encode(['status' => 500, 'message' => 'Unable to verify account.']);
-            exit;
-        }
-        $verifiedStmt->bind_param('i', $user_id);
-        $verifiedStmt->execute();
-        $verified = $verifiedStmt->get_result()->fetch_assoc();
-        $verifiedStmt->close();
-        if (!$verified || (int) $verified['verified'] !== 1) {
-            http_response_code(403);
-            echo json_encode([
-                'status' => 403,
-                'message' => 'Please verify your email before creating tickets. Check your inbox or spam folder.'
-            ]);
-            exit;
-        }
-    }
-
-    if (!in_array($user_role, ['client', 'admin', 'super_admin', 'technician'], true)) {
-        echo json_encode([
-            'status' => 403,
-            'message' => 'Forbidden.'
-        ]);
+    if (!isManagementRole($user_role)) {
+        http_response_code(403);
+        echo json_encode(['status' => 403, 'message' => 'Clerks may only comment on existing tickets.']);
         exit;
     }
-
-
 
     $rawTicketId = $_POST['m_ticketId'] ?? '';
     $m_ticketId = $rawTicketId === '' ? 0 : filter_var($rawTicketId, FILTER_VALIDATE_INT);
@@ -143,13 +117,7 @@ if (isset($_POST['post-ticket'])) {
         exit;
     }
 
-    if ($m_ticketId === 0 && $user_role === 'technician') {
-        http_response_code(403);
-        echo json_encode(['status' => 403, 'message' => 'Technicians cannot create tickets.']);
-        exit;
-    }
-
-    if ($user_role != 'technician') {
+    if (isManagementRole($user_role)) {
         $title = trim((string) ($_POST['ticket_title'] ?? ''));
         $ticket_category = filter_var($_POST['project'] ?? null, FILTER_VALIDATE_INT);
         $ticket_type_id = filter_var($_POST['ticket_type'] ?? null, FILTER_VALIDATE_INT);
@@ -184,11 +152,11 @@ if (isset($_POST['post-ticket'])) {
 
         $queryck = "SELECT users.user_id FROM users
                     INNER JOIN users_info ON users.user_id = users_info.user_id
-                    WHERE users.role = 'technician' AND users_info.expertise = ?";
+                    WHERE users.role = 'clerk' AND users_info.expertise = ?";
         $technicianStmt = $con->prepare($queryck);
         if (!$technicianStmt) {
             http_response_code(500);
-            echo json_encode(['status' => 500, 'message' => 'Unable to assign a technician.']);
+            echo json_encode(['status' => 500, 'message' => 'Unable to assign a clerk.']);
             exit;
         }
         $technicianStmt->bind_param('i', $ticket_category);
@@ -205,7 +173,7 @@ if (isset($_POST['post-ticket'])) {
                 if (!$countStmt) {
                     $technicianStmt->close();
                     http_response_code(500);
-                    echo json_encode(['status' => 500, 'message' => 'Unable to assign a technician.']);
+                    echo json_encode(['status' => 500, 'message' => 'Unable to assign a clerk.']);
                     exit;
                 }
                 $technicianId = (int) $technician;
@@ -230,14 +198,6 @@ if (isset($_POST['post-ticket'])) {
                 $lowestTechnician = $entry['technician'];
             }
         }
-    } else {
-        $statusOptions = ['open' => 'Open', 'in progress' => 'In progress', 'closed' => 'Closed'];
-        $status = $statusOptions[strtolower(trim((string) ($_POST['ticket_status'] ?? '')))] ?? '';
-        if ($status === '') {
-            http_response_code(400);
-            echo json_encode(['status' => 400, 'message' => 'Invalid ticket status.']);
-            exit;
-        }
     }
 
 
@@ -257,8 +217,7 @@ if (isset($_POST['post-ticket'])) {
             echo json_encode(['status' => 404, 'message' => 'Ticket not found.']);
             exit;
         }
-        if (($user_role === 'client' && (int) $existingTicket['user_id'] !== $authenticatedUserId)
-            || ($user_role === 'technician' && (int) $existingTicket['technician'] !== $authenticatedUserId)) {
+        if (!canAccessTicket($existingTicket, $user_role, $authenticatedUserId)) {
             http_response_code(403);
             echo json_encode(['status' => 403, 'message' => 'Forbidden.']);
             exit;
@@ -267,33 +226,14 @@ if (isset($_POST['post-ticket'])) {
         date_default_timezone_set('Asia/Manila');
         $last_activity = date("m/d/Y h:i a");
 
-        if ($user_role == 'technician') {
-            $stmt = $con->prepare("UPDATE tickets SET status = ?, last_activity = ? WHERE ticket_id = ?");
-            if (!$stmt) {
-                http_response_code(500);
-                echo json_encode(['status' => 500, 'message' => 'Unable to update ticket.']);
-                exit;
-            }
-            $stmt->bind_param('ssi', $status, $last_activity, $m_ticketId);
-        } else if ($user_role == 'client') {
-            $stmt = $con->prepare("UPDATE tickets SET title = ?, category_id = ?, type_id = ?, description = ?, technician = ?, last_activity = ? WHERE ticket_id = ?");
-            if (!$stmt) {
-                http_response_code(500);
-                echo json_encode(['status' => 500, 'message' => 'Unable to update ticket.']);
-                exit;
-            }
-            $technicianId = (int) ($lowestTechnician ?? 0);
-            $stmt->bind_param('siisisi', $title, $ticket_category, $ticket_type_id, $description, $technicianId, $last_activity, $m_ticketId);
-        } else {
-            $stmt = $con->prepare("UPDATE tickets SET title = ?, category_id = ?, type_id = ?, description = ?, technician = ?, status = ?, last_activity = ? WHERE ticket_id = ?");
-            if (!$stmt) {
-                http_response_code(500);
-                echo json_encode(['status' => 500, 'message' => 'Unable to update ticket.']);
-                exit;
-            }
-            $technicianId = (int) ($lowestTechnician ?? 0);
-            $stmt->bind_param('siisissi', $title, $ticket_category, $ticket_type_id, $description, $technicianId, $status, $last_activity, $m_ticketId);
+        $stmt = $con->prepare("UPDATE tickets SET title = ?, category_id = ?, type_id = ?, description = ?, technician = ?, status = ?, last_activity = ? WHERE ticket_id = ?");
+        if (!$stmt) {
+            http_response_code(500);
+            echo json_encode(['status' => 500, 'message' => 'Unable to update ticket.']);
+            exit;
         }
+        $technicianId = (int) ($lowestTechnician ?? 0);
+        $stmt->bind_param('siisissi', $title, $ticket_category, $ticket_type_id, $description, $technicianId, $status, $last_activity, $m_ticketId);
         $resultf = $stmt->execute();
         $stmt->close();
 
@@ -435,13 +375,12 @@ if (isset($_POST['post-ticket-comment'])) {
         echo json_encode(['status' => 404, 'message' => 'Ticket not found.']);
         exit;
     }
-    if (($user_role === 'client' && (int) $commentTicket['user_id'] !== $authenticatedUserId)
-        || ($user_role === 'technician' && (int) $commentTicket['technician'] !== $authenticatedUserId)) {
+    if (!canAccessTicket($commentTicket, $user_role, $authenticatedUserId)) {
         http_response_code(403);
         echo json_encode(['status' => 403, 'message' => 'Forbidden.']);
         exit;
     }
-    if ($user_role === 'client') {
+    if ($user_role === 'clerk') {
         $verifiedStmt = $con->prepare("SELECT verified FROM users WHERE user_id = ?");
         if (!$verifiedStmt) {
             http_response_code(500);

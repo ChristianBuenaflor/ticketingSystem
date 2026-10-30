@@ -9,8 +9,13 @@ if (!empty($_SESSION['logged_in'])) {
   die;
 }
 
+if (!isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
+
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
+$user_role = normalizeUserRole((string) $_SESSION['role']);
 
 
 
@@ -63,10 +68,10 @@ $user_role = $_SESSION['role'];
 
 
         <div class="row mt-4 card shadow-sm">
-          <div class="card-header d-flex" style="justify-content: space-between;background-color:#a60212; <?php if ($user_role != 'client') { ?> padding-top:28px; padding-bottom:28px; <?php } ?>">
+          <div class="card-header d-flex" style="justify-content: space-between;background-color:#a60212; <?php if (isManagementRole($user_role)) { ?> padding-top:28px; padding-bottom:28px; <?php } ?>">
             <h6 style="color:#ffffff;">User - Ticket Category</h6>
             <?php
-            if ($user_role == 'admin' || $user_role == 'super_admin') {
+            if (isManagementRole($user_role)) {
             ?>
               <button class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addCategoryM"><i class="ri-add-circle-fill"></i> Add Category</button>
             <?php
@@ -116,12 +121,14 @@ $user_role = $_SESSION['role'];
                           </button>
                           <ul class="dropdown-menu mt-1" style="border-radius: 0; padding:0">
 
-                            <a href="#" class="updateCategory" data-category-id='<?= $category_id ?>'>
-                              <li style="font-size:.7rem; padding:6px 12px;" class="dropdown-item"><i style="font-weight: 1000; color:darkorange" class="ri-file-edit-line"></i> UPDATE CATEGORY</li>
-                            </a>
+                            <?php if (isManagementRole($user_role)) { ?>
+                              <a href="#" class="updateCategory" data-category-id='<?= $category_id ?>'>
+                                <li style="font-size:.7rem; padding:6px 12px;" class="dropdown-item"><i style="font-weight: 1000; color:darkorange" class="ri-file-edit-line"></i> UPDATE CATEGORY</li>
+                              </a>
+                            <?php } ?>
 
                             <?php
-                            if ($user_role == 'admin'||$user_role == 'super_admin') {
+                            if (isManagementRole($user_role)) {
                             ?>
                               <a href="../delete.php?deleteID=<?= $category_id ?>&from=category">
                                 <li style="font-size:.7rem; padding:6px 12px;" class="dropdown-item"><i style="font-weight: 1000; color:red" class="ri-delete-bin-line"></i> DELETE</li>

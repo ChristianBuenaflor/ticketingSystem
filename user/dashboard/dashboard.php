@@ -10,83 +10,68 @@ if (!empty($_SESSION['logged_in'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
-$isAdminDashboard = in_array($user_role, ['admin', 'super_admin'], true);
+$user_role = normalizeUserRole((string) $_SESSION['role']);
+$isAdminDashboard = isManagementRole($user_role);
 $dashboardLinks = [
   'projects' => '../projects/list.php',
   'tickets' => '../tickets/list.php',
-  'clients' => '../users/clients.php',
-  'technicians' => '../users/technicians.php',
-  'admins' => '../users/admins.php',
+  'clerk' => '../users/list.php?list=clerk',
+  'admin' => '../users/list.php?list=admin',
+  'director' => '../users/list.php?list=director',
+  'head' => '../users/list.php?list=head',
+  'admins' => '../users/list.php?list=admin',
   'categories' => '../settings/ticket-category.php',
   'profile' => '../settings/my-profile.php',
 ];
 
 $projectCount = 0;
 $ticketCount = 0;
-$clientCount = 0;
-$technicianCount = 0;
+$clerkCount = 0;
+$directorCount = 0;
+$headCount = 0;
 $adminCount = 0;
-if ($user_role == 'admin' || $user_role == 'super_admin') {
-  $sql = "SELECT COUNT(project_id) AS projectCount FROM projects";
-} else {
-  $sql = "SELECT COUNT(DISTINCT projects.project_id) AS projectCount
-    FROM projects INNER JOIN project_shares
-    ON project_shares.project_id = projects.project_id
-    WHERE project_shares.user_id = $user_id";
+$visibleProjectIds = getAccessibleProjectIds($con, $user_role, (int) $user_id);
+if ($visibleProjectIds === false) {
+  throw new RuntimeException('Unable to load visible projects.');
 }
-$result = $con->query($sql);
+$projectIdList = $visibleProjectIds ? implode(',', $visibleProjectIds) : '0';
+$result = $con->query("SELECT COUNT(project_id) AS projectCount FROM projects WHERE project_id IN ($projectIdList)");
 
 if ($result->num_rows > 0) {
     $row = $result->fetch_assoc();
     $projectCount = (int) $row['projectCount'];
 }
 
-if($user_role == 'technician')
-{
-  $sqlp = "SELECT COUNT(ticket_id) AS ticketCount FROM tickets where technician = $user_id";
+$sqlp = isManagementRole($user_role)
+  ? "SELECT COUNT(ticket_id) AS ticketCount FROM tickets"
+  : "SELECT COUNT(ticket_id) AS ticketCount FROM tickets WHERE user_id = $user_id OR technician = $user_id";
   $resultp = $con->query($sqlp);
-  
   if ($resultp->num_rows > 0) {
       $rowp = $resultp->fetch_assoc();
       $ticketCount = (int) $rowp['ticketCount'];
   }
-}else if($user_role == 'client')
-{
-  $sqlp = "SELECT COUNT(ticket_id) AS ticketCount FROM tickets where user_id = $user_id";
-  $resultp = $con->query($sqlp);
-  
-  if ($resultp->num_rows > 0) {
-      $rowp = $resultp->fetch_assoc();
-      $ticketCount = (int) $rowp['ticketCount'];
-  }
-}else{
 
-  $sqltech = "SELECT COUNT(ticket_id) AS ticketCount FROM tickets";
-  $resulttech = $con->query($sqltech);
-  
-  if ($resulttech->num_rows > 0) {
-      $rowtech = $resulttech->fetch_assoc();
-      $ticketCount = (int) $rowtech['ticketCount'];
-  }
-
-}
-
-
-$sqlu = "SELECT COUNT(user_id) AS clientCount FROM users where role = 'client'";
+$sqlu = "SELECT COUNT(user_id) AS count FROM users where role = 'clerk'";
 $resultu = $con->query($sqlu);
 
 if ($resultu->num_rows > 0) {
     $rowu = $resultu->fetch_assoc();
-    $clientCount = (int) $rowu['clientCount'];
+    $clerkCount = (int) $rowu['count'];
 }
 
-$sqlt = "SELECT COUNT(user_id) AS technicianCount FROM users where role = 'technician'";
+$sqlt = "SELECT COUNT(user_id) AS count FROM users where role = 'director'";
 $resultt = $con->query($sqlt);
 
 if ($resultt->num_rows > 0) {
     $rowt = $resultt->fetch_assoc();
-    $technicianCount = (int) $rowt['technicianCount'];
+    $directorCount = (int) $rowt['count'];
+}
+
+$sqlh = "SELECT COUNT(user_id) AS count FROM users where role = 'head'";
+$resulth = $con->query($sqlh);
+if ($resulth->num_rows > 0) {
+    $rowh = $resulth->fetch_assoc();
+    $headCount = (int) $rowh['count'];
 }
 
 $sqla = "SELECT COUNT(user_id) AS adminCount FROM users where role = 'admin'";
@@ -99,11 +84,9 @@ if ($resulta->num_rows > 0) {
 
 $taskStatusCounts = ['To do' => 0, 'In progress' => 0, 'Completed' => 0, 'Other' => 0];
 
-$taskQuery = 'SELECT projects_task.status, COUNT(*) AS total FROM projects_task';
-if (!$isAdminDashboard) {
-  $taskQuery .= " INNER JOIN project_shares ON project_shares.project_id = projects_task.project_id WHERE project_shares.user_id = $user_id";
-}
-$taskQuery .= ' GROUP BY projects_task.status';
+$taskQuery = "SELECT projects_task.status, COUNT(*) AS total FROM projects_task
+  WHERE projects_task.project_id IN ($projectIdList)
+  GROUP BY projects_task.status";
 $taskStatusResult = mysqli_query($con, $taskQuery);
 if (!$taskStatusResult) {
   throw new RuntimeException('Unable to load project task metrics.');
@@ -123,12 +106,9 @@ while ($row = mysqli_fetch_assoc($taskStatusResult)) {
 $recentTasksQuery = "SELECT projects_task.task_id, projects_task.project_id, projects_task.task_title,
     projects_task.status, projects_task.date_created, projects.project_title
   FROM projects_task
-  INNER JOIN projects ON projects.project_id = projects_task.project_id";
-if (!$isAdminDashboard) {
-  $recentTasksQuery .= " INNER JOIN project_shares ON project_shares.project_id = projects_task.project_id
-    WHERE project_shares.user_id = $user_id";
-}
-$recentTasksQuery .= ' ORDER BY projects_task.task_id DESC LIMIT 6';
+  INNER JOIN projects ON projects.project_id = projects_task.project_id
+  WHERE projects_task.project_id IN ($projectIdList)
+  ORDER BY projects_task.task_id DESC LIMIT 6";
 $recentTasksResult = mysqli_query($con, $recentTasksQuery);
 if (!$recentTasksResult) {
   throw new RuntimeException('Unable to load recent project tasks.');
@@ -143,8 +123,9 @@ $recentTaskShares = loadRecentTaskShares($con, $recentTasks);
 $dashboardCounts = [
   'projects' => $projectCount,
   'tickets' => $ticketCount,
-  'clients' => $clientCount,
-  'technicians' => $technicianCount,
+  'clerk' => $clerkCount,
+  'director' => $directorCount,
+  'head' => $headCount,
   'admins' => $adminCount,
 ];
 
@@ -201,7 +182,7 @@ $dashboardCounts = [
                   <th>Start date</th>
                   <th>Deadline</th>
                   <?php 
-                  if($user_role != 'client'){
+                  if($isAdminDashboard || $user_role === 'clerk'){
                   ?>
                   <th>Progress</th>
                   <?php } ?>
@@ -210,14 +191,10 @@ $dashboardCounts = [
               </thead>
               <tbody>
                 <?php
-                if ($user_role == 'admin' || $user_role == 'super_admin') {
-                  $query = "SELECT * FROM projects";
-                } else {
-                  $query = "SELECT projects.* FROM projects
-                    INNER JOIN project_shares ON projects.project_id = project_shares.project_id
-                    WHERE project_shares.user_id = $user_id";
+                $result = mysqli_query($con, "SELECT * FROM projects WHERE project_id IN ($projectIdList)");
+                if (!$result) {
+                  throw new RuntimeException('Unable to load visible projects.');
                 }
-                $result = mysqli_query($con, $query);
                 if (mysqli_num_rows($result) > 0) {
                   while ($row = $result->fetch_assoc()) {
                     $project_id = $row['project_id'];
@@ -262,7 +239,7 @@ $dashboardCounts = [
                       <td class="td<?= $project_id ?>" style="width: 150px;"><?= $start_date ?></td>
                       <td class="td<?= $project_id ?>" style="width: 150px;"><?= $deadline ?></td>
                       <?php 
-                  if($user_role != 'client'){
+                  if($isAdminDashboard || $user_role === 'clerk'){
                   ?>
                       <td title="<?=  number_format($avarageProgress, 0) . "%" ?>" class="td<?= $project_id ?>" style="width: 300px;">
                         <div style="height:8px;" class="progress" role="progressbar" aria-label="project progress" aria-valuenow="<?=  number_format($avarageProgress, 0) . "%" ?>" aria-valuemin="0" aria-valuemax="100">

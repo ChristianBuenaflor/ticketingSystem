@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once __DIR__ . '/includes/role_permissions.php';
 if (isset($_GET['verified'])) {
     echo '<div class="alert alert-success text-center">
             <i class="ri-checkbox-circle-fill"></i> Email successfully verified! You can now login.
@@ -16,7 +17,9 @@ $return_url = isset($_GET['return_url']) ? $_GET['return_url'] : '';
 
 
 if (!empty($_SESSION['logged_in'])) {
-    if ($_SESSION['role'] == 'admin' || $_SESSION['role'] == 'super_admin' || $_SESSION['role'] == 'client') {
+    $sessionRole = normalizeUserRole((string) ($_SESSION['role'] ?? ''));
+    if ($sessionRole !== '') {
+        $_SESSION['role'] = $sessionRole;
         if (!empty($return_url)) {
             header("Location: " . urldecode($return_url));
             exit;

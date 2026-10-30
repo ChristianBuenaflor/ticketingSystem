@@ -33,7 +33,7 @@ if (empty($_SESSION['logged_in']) || (int) ($_SESSION['user_id'] ?? 0) < 1) {
     ticketAjaxResponse(401, ['status' => 401, 'message' => 'Authentication required.']);
 }
 
-if (($_SESSION['role'] ?? '') !== 'super_admin') {
+if (!isManagementRole((string) ($_SESSION['role'] ?? ''))) {
     ticketAjaxResponse(403, ['status' => 403, 'message' => 'Forbidden.']);
 }
 

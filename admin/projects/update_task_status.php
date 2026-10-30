@@ -2,6 +2,11 @@
 session_start();
 include('../../includes/connections.php');
 
+if (empty($_SESSION['logged_in']) || !isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+    http_response_code(403);
+    exit('Forbidden');
+}
+
 if (!isset($_POST['task_id'], $_POST['new_status'])) {
     http_response_code(400);
     exit('Task ID or new status not provided!');
@@ -25,7 +30,7 @@ if (!mysqli_begin_transaction($con)) {
     exit('Unable to update task status.');
 }
 
-$statusStmt = mysqli_prepare($con, 'SELECT status FROM projects_task WHERE task_id = ?');
+$statusStmt = mysqli_prepare($con, 'SELECT status, project_id FROM projects_task WHERE task_id = ?');
 if (!$statusStmt) {
     mysqli_rollback($con);
     http_response_code(500);
@@ -45,6 +50,16 @@ if (!$task) {
     mysqli_rollback($con);
     http_response_code(404);
     exit('Task not found.');
+}
+if (!canAccessProject(
+    $con,
+    (int) $task['project_id'],
+    (string) ($_SESSION['role'] ?? ''),
+    $userId
+)) {
+    mysqli_rollback($con);
+    http_response_code(403);
+    exit('Forbidden');
 }
 
 if ($newStatus !== $task['status']) {

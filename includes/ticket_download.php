@@ -5,18 +5,11 @@ function denyTicketDownload(int $status, string $message): void
     exit($message);
 }
 
+require_once __DIR__ . '/role_permissions.php';
+
 function canDownloadTicket(array $ticket, string $role, int $userId): bool
 {
-    if ($role === 'admin' || $role === 'super_admin') {
-        return true;
-    }
-    if ($role === 'client') {
-        return (int) $ticket['user_id'] === $userId;
-    }
-    if ($role === 'technician') {
-        return (int) $ticket['technician'] === $userId;
-    }
-    return false;
+    return canAccessTicket($ticket, $role, $userId);
 }
 
 function ticketDownloadFileName(mysqli $con, int $fileId, int $ticketId, string $role, int $userId): ?string
@@ -77,10 +70,10 @@ function serveTicketFileArchive(mysqli $con, bool $adminOnly): void
     if (empty($_SESSION['logged_in']) || $userId < 1) {
         denyTicketDownload(401, 'Authentication required.');
     }
-    if ($adminOnly && $role !== 'super_admin') {
+    if ($adminOnly && !isManagementRole($role)) {
         denyTicketDownload(403, 'Forbidden.');
     }
-    if (!$adminOnly && !in_array($role, ['admin', 'super_admin', 'client', 'technician'], true)) {
+    if (!$adminOnly && !in_array(normalizeUserRole($role), ['admin', 'director', 'head', 'clerk'], true)) {
         denyTicketDownload(403, 'Forbidden.');
     }
 
@@ -194,10 +187,10 @@ function serveTicketAttachment(mysqli $con, bool $adminOnly): void
     if (empty($_SESSION['logged_in']) || $userId < 1) {
         denyTicketDownload(401, 'Authentication required.');
     }
-    if ($adminOnly && $role !== 'super_admin') {
+    if ($adminOnly && !isManagementRole($role)) {
         denyTicketDownload(403, 'Forbidden.');
     }
-    if (!$adminOnly && !in_array($role, ['admin', 'super_admin', 'client', 'technician'], true)) {
+    if (!$adminOnly && !in_array(normalizeUserRole($role), ['admin', 'director', 'head', 'clerk'], true)) {
         denyTicketDownload(403, 'Forbidden.');
     }
 

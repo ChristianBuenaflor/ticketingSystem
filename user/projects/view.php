@@ -10,9 +10,9 @@ if (!empty($_SESSION['logged_in'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
-$can_manage_projects = in_array($user_role, ['admin', 'super_admin'], true);
-$can_manage_tasks = in_array($user_role, ['admin', 'super_admin', 'technician'], true);
+$user_role = normalizeUserRole((string) $_SESSION['role']);
+$can_manage_projects = isManagementRole($user_role);
+$can_manage_tasks = isManagementRole($user_role);
 
 function formatProjectFileSize($fileSize, $filePath)
 {
@@ -57,16 +57,11 @@ if (isset($_GET['project'])) {
     $project_id = (int) $_GET['project'];
     $_SESSION['project'] = $project_id;
 
-    $queryx = "SELECT projects.* FROM projects
-               WHERE projects.project_id = $project_id";
-    if (!$can_manage_projects) {
-        $queryx .= " AND EXISTS (
-            SELECT 1 FROM project_shares
-            WHERE project_shares.project_id = projects.project_id
-            AND project_shares.user_id = $user_id
-        )";
+    if (!canAccessProject($con, $project_id, $user_role, (int) $user_id)) {
+        header("Location: list.php");
+        exit;
     }
-    $resultx = mysqli_query($con, $queryx);
+    $resultx = mysqli_query($con, "SELECT * FROM projects WHERE project_id = $project_id");
     if (mysqli_num_rows($resultx) > 0) {
         while ($rowx = $resultx->fetch_assoc()) {
             $project_title = $rowx['project_title'];
@@ -791,9 +786,11 @@ if (isset($_GET['project'])) {
                             <h6 style="padding: 12px 0px; margin-bottom:0"><i class="ri-server-line"></i> <?= $project_title ?></h6>
                             <button type="button" class="task-shared-accounts-trigger" id="projectSharedAccountsButton" data-bs-toggle="popover" aria-label="Show shared accounts" hidden></button>
                         </div>
-                        <button type="button" class="btn share-icon" data-bs-toggle="modal" data-bs-target="#shareProjectM" aria-label="Share project">
-                            <i class="ri-share-box-line"></i> Share With
-                        </button>
+                        <?php if ($can_manage_projects) { ?>
+                            <button type="button" class="btn share-icon" data-bs-toggle="modal" data-bs-target="#shareProjectM" aria-label="Share project">
+                                <i class="ri-share-box-line"></i> Share With
+                            </button>
+                        <?php } ?>
 
                     </div>
                     <div class="card-body" style="padding:0">
@@ -1058,7 +1055,7 @@ if (isset($_GET['project'])) {
                                             }
                                     ?>
 
-                                            <div class="card-kanban tasks previewTaskM" <?php if($user_role != 'client'){?> draggable="true" <?php } ?>  data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
+                                            <div class="card-kanban tasks previewTaskM" <?php if($can_manage_tasks){?> draggable="true" <?php } ?>  data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
 
                                                 <div class="d-flex gap-2">
                                                     <?php echo '<img src="data:' . $profiles_type . ';base64,' . base64_encode($profiles) . '" alt="">'; ?>
@@ -1108,7 +1105,7 @@ if (isset($_GET['project'])) {
                                             }
                                     ?>
 
-                                            <div class="card-kanban tasks previewTaskM" <?php if($user_role != 'client'){?> draggable="true" <?php } ?> data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
+                                            <div class="card-kanban tasks previewTaskM" <?php if($can_manage_tasks){?> draggable="true" <?php } ?> data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
 
                                                 <div class="d-flex gap-2">
                                                     <?php echo '<img src="data:' . $profiles_type . ';base64,' . base64_encode($profiles) . '" alt="">'; ?>
@@ -1151,7 +1148,7 @@ if (isset($_GET['project'])) {
                                             }
                                     ?>
 
-                                            <div class="card-kanban tasks previewTaskM" <?php if($user_role != 'client'){?> draggable="true" <?php } ?> data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
+                                            <div class="card-kanban tasks previewTaskM" <?php if($can_manage_tasks){?> draggable="true" <?php } ?> data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
 
                                                 <div class="d-flex gap-2">
                                                     <?php echo '<img src="data:' . $profiles_type . ';base64,' . base64_encode($profiles) . '" alt="">'; ?>
@@ -1195,7 +1192,7 @@ if (isset($_GET['project'])) {
                                             }
                                     ?>
 
-                                            <div class="card-kanban tasks previewTaskM" <?php if($user_role != 'client'){?> draggable="true" <?php } ?> data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
+                                            <div class="card-kanban tasks previewTaskM" <?php if($can_manage_tasks){?> draggable="true" <?php } ?> data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
 
                                                 <div class="d-flex gap-2">
                                                     <?php echo '<img src="data:' . $profiles_type . ';base64,' . base64_encode($profiles) . '" alt="">'; ?>
@@ -1237,7 +1234,7 @@ if (isset($_GET['project'])) {
                                             }
                                     ?>
 
-                                            <div class="card-kanban tasks previewTaskM" <?php if($user_role != 'client'){?> draggable="true" <?php } ?> data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
+                                            <div class="card-kanban tasks previewTaskM" <?php if($can_manage_tasks){?> draggable="true" <?php } ?> data-taskid="<?= $row['task_id']; ?>" data-task-id="<?= $row['task_id']; ?>">
 
                                                 <div class="d-flex gap-2">
                                                     <?php echo '<img src="data:' . $profiles_type . ';base64,' . base64_encode($profiles) . '" alt="">'; ?>
@@ -1273,12 +1270,12 @@ if (isset($_GET['project'])) {
 
                 <div id="div-files" class="d-none row mt-4 card shadow-sm">
                     <div class="card-header d-flex" style="justify-content: space-between;  <?php
-                                    if($user_role == 'super_admin'|| $user_role == 'admin')
+                                    if($can_manage_projects)
                                     {
                                     ?> padding: 6px 12px;<?php }else{ ?> padding-top:22px; padding-bottom:22px; <?php  } ?>">
                         <h6>Files</h6>
                         <?php
-                                    if($user_role == 'super_admin'|| $user_role == 'admin')
+                                    if($can_manage_projects)
                                     {
                                     ?>
                         <button style="padding:6px 12px" class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addFilesM"><i class="ri-add-circle-fill"></i> Add Files</button>
@@ -1294,7 +1291,7 @@ if (isset($_GET['project'])) {
                                     <th>File</th>
                                     <th>File Size</th>
                                     <?php
-                                    if ($user_role == 'super_admin' || $user_role == 'admin') {
+                                    if ($can_manage_projects) {
                                     ?>
                                         <th class="text-center"><i class="ri-menu-line"></i></th>
                                     <?php } ?>
@@ -1352,7 +1349,7 @@ if (isset($_GET['project'])) {
                                                             </td>
                                                             <td><?= htmlspecialchars(formatProjectFileSize($rowPFS['file_size'], $projectFilePath), ENT_QUOTES, 'UTF-8') ?></td>
                                                             <?php
-                                                            if ($user_role == 'super_admin' || $user_role == 'admin') {
+                                                            if ($can_manage_projects) {
                                                             ?>
                                                                 <td class="text-center"><a target="_blank" onclick="javascript:return confirm('Delete file? file ID : <?= $rowPFS['id'] ?>');" href="../delete.php?deleteID=<?= $rowPFS['id'] ?>&from=files&project_id=<?= $project_id ?>" class="btn table-btn-delete deleteFile"><i class="ri-delete-bin-5-line"></i></a>
                                                                 </td>
@@ -1655,6 +1652,7 @@ if (isset($_GET['project'])) {
     </div>
     <!-- partial -->
 
+    <?php if ($can_manage_projects) { ?>
     <div class="modal fade" id="shareProjectM" tabindex="-1" aria-labelledby="shareProjectMLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -1685,6 +1683,7 @@ if (isset($_GET['project'])) {
             <div class="toast-body" id="projectShareToastMessage"></div>
         </div>
     </div>
+    <?php } ?>
 
     <!-- Modal -->
 
@@ -1729,7 +1728,7 @@ if (isset($_GET['project'])) {
                                 <select name="task_status" id="selectStatus" class="select_status selectpicker">
                                     <option selected value="To do">To do</option>
                                     <?php 
-                        if($user_role != 'client')
+                        if($can_manage_tasks)
                         {
                         ?>
                                     <option value="In progress">In progress</option>
@@ -2695,9 +2694,6 @@ if (isset($_GET['project'])) {
                 var res = jQuery.parseJSON(response);
 
                 if (res.status == 200) {
-                    if(<?php echo json_encode($user_role) ?> == 'client'){
-                        $('#selectStatusdiv').addClass('d-none');
-                    }
                     populateTaskEditForm(res);
                 }
 
@@ -2723,9 +2719,6 @@ if (isset($_GET['project'])) {
                 var res = jQuery.parseJSON(response);
 
                 if (res.status == 200) {
-                    if(<?php echo json_encode($user_role) ?> == 'client'){
-                        $('#selectStatusdiv').addClass('d-none');
-                    }
                     populateTaskEditForm(res);
                 }
 
@@ -2864,7 +2857,7 @@ if (isset($_GET['project'])) {
                 }
 
 
-                if (<?php echo json_encode($user_role) ?> == 'admin'||<?php echo json_encode($user_role) ?> == 'super_admin') {
+                if (<?php echo json_encode($can_manage_projects) ?>) {
 
                     commentHtml += `
            <div style="position:absolute;top:6px;right:0;">
@@ -3050,7 +3043,7 @@ if (isset($_GET['project'])) {
                        `);
                 }
 
-                if (<?php echo json_encode($user_role) ?> == 'admin'||<?php echo json_encode($user_role) ?> == 'super_admin') {
+                if (<?php echo json_encode($can_manage_projects) ?>) {
 
                     commentHtml += `
 <div style="position:absolute;top:6px;right:0;">
@@ -3220,7 +3213,7 @@ if (isset($_GET['project'])) {
                 }
 
 
-                if (<?php echo json_encode($user_role) ?> == 'admin'||<?php echo json_encode($user_role) ?> == 'super_admin') {
+                if (<?php echo json_encode($can_manage_projects) ?>) {
 
                     commentHtml += `
 <div style="position:absolute;top:6px;right:0;">
@@ -4499,6 +4492,9 @@ console.log('aba aba');
 
 <script>
     $(function() {
+        if (!<?= json_encode($can_manage_projects) ?>) {
+            return;
+        }
         var projectId = <?= json_encode((int) $project_id) ?>;
         var shareSelect = $('#shareUserSelect').select2({
             width: '100%',
@@ -4584,13 +4580,15 @@ console.log('aba aba');
                         class: 'd-flex align-items-center justify-content-between gap-2 py-1 border-bottom'
                     });
                     entry.append($('<span class="small project-share-name">').text(user.name + ' (' + user.role + ')'));
-                    entry.append($('<button>', {
-                        type: 'button',
-                        class: 'btn btn-outline-danger removeProjectShare remove-project-share',
-                        text: 'Remove',
-                        'aria-label': 'Remove sharing with ' + user.name,
-                        'data-user-id': user.user_id
-                    }));
+                    if (user.can_remove) {
+                        entry.append($('<button>', {
+                            type: 'button',
+                            class: 'btn btn-outline-danger removeProjectShare remove-project-share',
+                            text: 'Remove',
+                            'aria-label': 'Remove sharing with ' + user.name,
+                            'data-user-id': user.user_id
+                        }));
+                    }
                     list.append(entry);
                 });
             }).fail(function() {

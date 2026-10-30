@@ -3,8 +3,9 @@ include("../../includes/connections.php");
 session_start();
 
 if (!empty($_SESSION['logged_in'])) {
-  if($_SESSION['role'] != 'super_admin'){
+  if(!isManagementRole((string) ($_SESSION['role'] ?? ''))){
     header("location:../../user/dashboard/dashboard.php");
+    exit;
   }
 } else {
     header("location:../../index.php");
@@ -66,9 +67,10 @@ $user_id = $_SESSION['user_id'];
               <select class="roles_filter" id="rolesFilter">
                 <option value="">-</option>
                 <option value=" ">All</option>
-                <option value="client">Clients</option>
-                <option value="technician">Technicians</option>
-                <option value="admin">Admins</option>
+                <option value="admin">Admin</option>
+                <option value="director">Director</option>
+                <option value="head">Head</option>
+                <option value="clerk">Clerk</option>
               </select>
             </div>
 
@@ -87,7 +89,7 @@ $user_id = $_SESSION['user_id'];
               </thead>
               <tbody>
                 <?php
-                $query = "SELECT * FROM users where role != 'super_admin'";
+                $query = "SELECT * FROM users";
                 $result = mysqli_query($con, $query);
                 if (mysqli_num_rows($result) > 0) {
                   while ($row = $result->fetch_assoc()) {
@@ -119,7 +121,7 @@ $user_id = $_SESSION['user_id'];
                         <td><?= $emails ?></td>
                         <td><?= $phone ?></td>
                         <td><?php if($job_title == ''){ echo '-';}else{?><?= $skype ?><?php }?></td>
-                        <td class="position-relative"><?= $roles ?>
+                        <td class="position-relative"><?= htmlspecialchars(ucfirst(normalizeUserRole($roles)), ENT_QUOTES, 'UTF-8') ?>
                         <?php 
                         ?>
                         <!-- Delete Button -->
@@ -225,9 +227,10 @@ $user_id = $_SESSION['user_id'];
               <div class="col">
                 <select name="user_type" id="user_type" class="select_userType selectpicker">
                   <option value="">-</option>
-                  <option value="client">Client</option>
-                  <option value="technician">Technician</option>
                   <option value="admin">Admin</option>
+                  <option value="director">Director</option>
+                  <option value="head">Head</option>
+                  <option value="clerk">Clerk</option>
                 </select>
               </div>
             </div>

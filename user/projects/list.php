@@ -10,7 +10,7 @@ if (!empty($_SESSION['logged_in'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
+$user_role = normalizeUserRole((string) $_SESSION['role']);
 
 
 
@@ -113,12 +113,12 @@ $user_role = $_SESSION['role'];
         <div class="row mt-4 card shadow-sm">
           <div class="card-header d-flex" style="justify-content: space-between;background-color:
 #a60212;color:#ffffff; <?php
-                                    if($user_role != 'super_admin'|| $user_role != 'admin')
+                                    if(!isManagementRole($user_role))
                                     {
                                     ?> padding-top:28px; padding-bottom:28px; <?php } ?>">
             <h6>User - Projects</h6>
             <?php 
-            if($user_role == 'super_admin' || $user_role == 'admin'){
+            if(isManagementRole($user_role)){
             ?>
             <button class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addProjectM"><i class="ri-add-circle-fill"></i> Add Project</button>
             <?php 
@@ -134,24 +134,21 @@ $user_role = $_SESSION['role'];
                   <th>Title</th>
                   <th>Start date</th>
                   <th>Deadline</th>
-                  <?php 
-                  if($user_role != 'client'){
-                  ?>
                   <th>Progress</th>
-                  <?php } ?>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 <?php
-                if ($user_role == 'admin' || $user_role == 'super_admin') {
-                  $query = "SELECT * FROM projects";
-                } else {
-                  $query = "SELECT projects.* FROM projects
-                            INNER JOIN project_shares ON projects.project_id = project_shares.project_id
-                            WHERE project_shares.user_id = $user_id";
+                $visibleProjectIds = getAccessibleProjectIds($con, $user_role, (int) $user_id);
+                if ($visibleProjectIds === false) {
+                  throw new RuntimeException('Unable to load visible projects.');
                 }
-                $result = mysqli_query($con, $query);
+                $projectIdList = $visibleProjectIds ? implode(',', $visibleProjectIds) : '0';
+                $result = mysqli_query($con, "SELECT * FROM projects WHERE project_id IN ($projectIdList)");
+                if (!$result) {
+                  throw new RuntimeException('Unable to load visible projects.');
+                }
                 if (mysqli_num_rows($result) > 0) {
                   while ($row = $result->fetch_assoc()) {
                     $project_id = $row['project_id'];
@@ -196,18 +193,14 @@ $user_role = $_SESSION['role'];
                       <td class="td<?= $project_id ?>" style="width: 150px;"><?= $start_date ?></td>
                       <td class="td<?= $project_id ?>" style="width: 150px;"><?= $deadline ?></td>
                       
-                  <?php 
-                  if($user_role != 'client'){
-                  ?>
                       <td title="<?=  number_format($avarageProgress, 0) . "%" ?>" class="td<?= $project_id ?>" style="width: 300px;">
                         <div style="height:8px;" class="progress" role="progressbar" aria-label="project progress" aria-valuenow="<?=  number_format($avarageProgress, 0) . "%" ?>" aria-valuemin="0" aria-valuemax="100">
                           <div class="progress-bar" style="width: <?=  number_format($avarageProgress, 0) . "%" ?>; background-color:#a60212;"></div>
                         </div>
                       </td>
-                      <?php } ?>
                       <td style="width: 100px;" class="position-relative td<?= $project_id ?>"><?= $status ?>
 
-                      <?php if($user_role == 'super_admin' || $user_role == 'admin'){ ?>
+                      <?php if(isManagementRole($user_role)){ ?>
                         <!-- Delete Button -->
                         <div class="btn-group dropstart" style="padding:0; position:absolute; top:4px; right:12px">
                           <button type="button" class="btn" style="padding:0; border:0" data-bs-toggle="dropdown" aria-expanded="false">

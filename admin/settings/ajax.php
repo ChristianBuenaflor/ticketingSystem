@@ -2,7 +2,8 @@
 include("../../includes/connections.php");
 session_start();
 
-if (empty($_SESSION['logged_in']) || (int) ($_SESSION['user_id'] ?? 0) < 1) {
+if (empty($_SESSION['logged_in']) || (int) ($_SESSION['user_id'] ?? 0) < 1
+    || !isManagementRole((string) ($_SESSION['role'] ?? ''))) {
   http_response_code(401);
   exit('Authentication required.');
 }

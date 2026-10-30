@@ -28,7 +28,7 @@ function registerNewUser($userData, $con) {
 
     // Hash password
     $hashed_password = password_hash($userData['password'], PASSWORD_DEFAULT);
-    $role = ($userData['clientele'] == 'Student') ? 'client' : strtolower($userData['clientele']);
+    $role = 'clerk';
 
     // Start transaction
     $con->begin_transaction();

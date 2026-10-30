@@ -65,8 +65,8 @@ function renderPageBreadcrumbs($portal)
     } elseif (strpos($relativePath, 'users/') === 0) {
         $userPage = basename($relativePath);
         $usersLabel = match ($userPage) {
-            'clients.php' => 'Clients',
-            'technicians.php' => 'Technicians',
+            'clients.php' => 'Clerks',
+            'technicians.php' => 'Clerks',
             'admins.php' => 'Admins',
             'profile.php' => 'User profile',
             'profile-eval.php' => 'User evaluation',

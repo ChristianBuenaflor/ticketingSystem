@@ -1,5 +1,11 @@
 <?php
 include("../../includes/connections.php");
+session_start();
+
+if (empty($_SESSION['logged_in']) || !isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
 
 if (isset($_POST['add-user'])) {
 
@@ -10,6 +16,11 @@ $email_address = mysqli_real_escape_string($con, $_POST['email_address']);
 $phone = mysqli_real_escape_string($con, $_POST['phone']);
 $user_type = mysqli_real_escape_string($con, $_POST['user_type']);
 
+if (!in_array($user_type, ['admin', 'director', 'head', 'clerk'], true)) {
+  http_response_code(400);
+  echo json_encode(['status' => 101]);
+  return;
+}
 
 
 
@@ -167,4 +178,3 @@ mysqli_close($con);
 
 
 ?>
-

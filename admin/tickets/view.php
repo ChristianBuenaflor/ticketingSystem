@@ -8,7 +8,7 @@ if (empty($_SESSION['csrf_token'])) {
 $csrf_token = $_SESSION['csrf_token'];
 
 if (!empty($_SESSION['logged_in'])) {
-  if($_SESSION['role'] != 'super_admin'){
+  if(!isManagementRole((string) ($_SESSION['role'] ?? ''))){
     header("location:../../user/dashboard/dashboard.php");
     exit;
   }
@@ -98,7 +98,7 @@ if($project_id!=0)
 
       if (!empty($roles)) {
 
-        if ($roles == 'super_admin') {
+        if (isManagementRole($roles)) {
           $profile_dp = file_get_contents('images/Default_pfp.png');
           $profile_lname = 'Administrator';
           $profile_fname = '';
@@ -271,7 +271,7 @@ if($project_id!=0)
             </div>
 
             <?php 
-            if($userRole!='super_admin')
+            if(isManagementRole($userRole))
             {
             ?>
 
@@ -360,7 +360,7 @@ if($project_id!=0)
                           <span><b><?= $commenter_fname . " " . $commenter_lname ?></b></span><span><?= $comment_date ?></span>
 
                           <?php
-                          if ($user_id == $commenter_user_id || $userRole == 'super_admin') {
+                          if ($user_id == $commenter_user_id || isManagementRole($userRole)) {
                           ?>
                             <!-- Delete Button -->
                             <div class="btn-group dropstart" style="padding:0; position:absolute; top:0; right:12px">

@@ -1,5 +1,11 @@
 <?php
 include "../includes/connections.php";
+session_start();
+
+if (empty($_SESSION['logged_in']) || !isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+  http_response_code(403);
+  exit('Forbidden');
+}
 
 if (isset($_GET['deleteID'])) {
   $id = $_GET['deleteID'];
@@ -11,6 +17,12 @@ if(!empty($_GET['urlID'])){
 
 if($from == 'projectComments'){
 
+  $commentProject = mysqli_query($con, "SELECT project_id FROM project_comments WHERE comment_id = $id");
+  $comment = $commentProject ? mysqli_fetch_assoc($commentProject) : null;
+  if (!$comment || !canAccessProject($con, (int) $comment['project_id'], (string) $_SESSION['role'], (int) $_SESSION['user_id'])) {
+    http_response_code(403);
+    exit('Forbidden');
+  }
   $sql = "delete from `project_comments` where comment_id =$id";
   $result = mysqli_query($con, $sql);
   echo '<script>window.close();</script>';
@@ -19,6 +31,14 @@ if($from == 'projectComments'){
 
 if($from == 'taskComments'){
 
+  $commentProject = mysqli_query($con, "SELECT projects_task.project_id FROM task_comments
+    INNER JOIN projects_task ON projects_task.task_id = task_comments.task_id
+    WHERE task_comments.comment_id = $id");
+  $comment = $commentProject ? mysqli_fetch_assoc($commentProject) : null;
+  if (!$comment || !canAccessProject($con, (int) $comment['project_id'], (string) $_SESSION['role'], (int) $_SESSION['user_id'])) {
+    http_response_code(403);
+    exit('Forbidden');
+  }
   $sql = "delete from `task_comments` where comment_id =$id";
   $result = mysqli_query($con, $sql);
   echo '<script>window.close();</script>';
@@ -29,6 +49,10 @@ if($from == 'files'){
 
   
 $project_id = $_GET['project_id'];
+if (!canAccessProject($con, (int) $project_id, (string) $_SESSION['role'], (int) $_SESSION['user_id'])) {
+  http_response_code(403);
+  exit('Forbidden');
+}
 
   $qpfiles = "SELECT * FROM projects WHERE project_id = $project_id";
 $rpfiles = mysqli_query($con, $qpfiles);
@@ -68,6 +92,10 @@ $result = mysqli_query($con, $sql);
 
 if($from == 'projects'){
 
+  if (!canAccessProject($con, (int) $id, (string) $_SESSION['role'], (int) $_SESSION['user_id'])) {
+    http_response_code(403);
+    exit('Forbidden');
+  }
   $qproject = "Select * from projects where project_id = $id";
   $rproject = mysqli_query($con, $qproject);
   if (mysqli_num_rows($rproject) > 0) {

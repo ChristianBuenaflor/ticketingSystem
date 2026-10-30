@@ -75,19 +75,19 @@ $query = "SELECT * FROM users where user_id = $user_id";
                     <ul>
                       <li class="menu-item">
                         <a href="../users/list.php">
-                          <span class="menu-title"><span class="menu-icon"><i class="ri-list-unordered"></i></span>&nbsp;Clients</span>
+                          <span class="menu-title"><span class="menu-icon"><i class="ri-list-unordered"></i></span>&nbsp;Clerks</span>
                         </a>
                       </li>
 
                       <li class="menu-item">
                         <a href="../users/list.php">
-                          <span class="menu-title"><span class="menu-icon"><i class="ri-list-unordered"></i></span>&nbsp;Technicians</span>
+                          <span class="menu-title"><span class="menu-icon"><i class="ri-list-unordered"></i></span>&nbsp;Directors</span>
                         </a>
                       </li>
 
                       <li class="menu-item<?= sidebarLinkIsCurrent('../users/list.php') ? ' active' : '' ?>">
                         <a href="../users/list.php"<?= sidebarLinkIsCurrent('../users/list.php') ? ' aria-current="page"' : '' ?>>
-                          <span class="menu-title"><span class="menu-icon"><i class="ri-list-unordered"></i></span>&nbsp;Admins</span>
+                          <span class="menu-title"><span class="menu-icon"><i class="ri-list-unordered"></i></span>&nbsp;Heads</span>
                         </a>
                       </li>
                     </ul>
@@ -103,7 +103,7 @@ $query = "SELECT * FROM users where user_id = $user_id";
                 
                 <li class="menu-header" style="padding-top: 20px"><span> OTHERS </span></li>
                 
-                <?php if($userRoles!='super_admin'){ ?>
+                <?php if(isManagementRole((string) $userRoles)){ ?>
                 <li class="menu-item sub-menu<?= $settingsMenuIsActive ? ' active open' : '' ?>">
                   <a href="#">
                     <span class="menu-icon">

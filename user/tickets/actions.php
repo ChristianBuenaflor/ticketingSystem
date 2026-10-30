@@ -8,9 +8,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
-$role = (string) ($_SESSION['role'] ?? '');
-if (empty($_SESSION['logged_in']) || $userId < 1
-    || !in_array($role, ['admin', 'super_admin', 'technician'], true)) {
+$role = normalizeUserRole((string) ($_SESSION['role'] ?? ''));
+if (empty($_SESSION['logged_in']) || $userId < 1 || !isManagementRole($role)) {
     http_response_code(403);
     exit('Forbidden.');
 }
@@ -39,11 +38,6 @@ if (!$ticket) {
     http_response_code(404);
     exit('Ticket not found.');
 }
-if ($role === 'technician' && (int) $ticket['technician'] !== $userId) {
-    http_response_code(403);
-    exit('Forbidden.');
-}
-
 $nextStatus = $ticket['status'] === 'Open'
     ? 'In progress'
     : ($ticket['status'] === 'In progress' ? 'Closed' : 'Open');
@@ -75,7 +69,7 @@ if (!$emailStmt) {
         $client_email = $owner['email'];
         $subject = 'Ticket Update';
         $actorStmt = $con->prepare("SELECT first_name, last_name FROM users_info WHERE user_id = ?");
-        $actorName = $role === 'technician' ? 'Technician' : 'Administrator';
+        $actorName = ucfirst($role);
         if ($actorStmt) {
             $actorStmt->bind_param('i', $userId);
             $actorStmt->execute();

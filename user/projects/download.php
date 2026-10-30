@@ -4,22 +4,18 @@ session_start();
 date_default_timezone_set('Asia/Manila');
 
 $user_id = (int) ($_SESSION['user_id'] ?? 0);
-$user_role = $_SESSION['role'] ?? '';
+$user_role = normalizeUserRole((string) ($_SESSION['role'] ?? ''));
 $project_id = (int) ($_SESSION['project'] ?? 0);
 $task_files = $_GET['files'] ?? '';
 $task_id = $_GET['taskID'] ?? '';
 
-$project_access = mysqli_query($con, "SELECT project_id FROM projects WHERE project_id = $project_id");
-if (!$project_access || mysqli_num_rows($project_access) === 0) {
+if (empty($_SESSION['logged_in']) || $user_id < 1) {
+    http_response_code(401);
+    exit('Authentication required.');
+}
+if (!canAccessProject($con, $project_id, $user_role, $user_id)) {
     http_response_code(403);
     exit('Forbidden');
-}
-if (!in_array($user_role, ['admin', 'super_admin'], true)) {
-    $share_access = mysqli_query($con, "SELECT 1 FROM project_shares WHERE project_id = $project_id AND user_id = $user_id");
-    if (!$share_access || mysqli_num_rows($share_access) === 0) {
-        http_response_code(403);
-        exit('Forbidden');
-    }
 }
 
 $file_ids = array_values(array_unique(array_filter(array_map('intval', explode(',', $task_files)))));

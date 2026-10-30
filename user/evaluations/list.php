@@ -3,13 +3,17 @@ include("../../includes/connections.php");
 session_start();
 
 if (!empty($_SESSION['logged_in'])) {
+    if (!isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+        http_response_code(403);
+        exit('Forbidden.');
+    }
 } else {
     header("location:../../index.php");
     die;
 }
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
+$user_role = normalizeUserRole((string) $_SESSION['role']);
 
 
 
@@ -75,7 +79,7 @@ $user_role = $_SESSION['role'];
                                     <option value=" ">All</option>
 
                                     <?php
-                                    $queryExp = "SELECT * FROM users u LEFT JOIN users_info i ON u.user_id = i.user_id WHERE u.role = 'technician'";
+                                    $queryExp = "SELECT * FROM users u LEFT JOIN users_info i ON u.user_id = i.user_id WHERE u.role = 'clerk'";
                                     $resultExp = mysqli_query($con, $queryExp);
                                     if (mysqli_num_rows($resultExp) > 0) {
                                         while ($rowExp = $resultExp->fetch_assoc()) {

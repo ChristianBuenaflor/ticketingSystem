@@ -6,6 +6,10 @@ if (isset($_GET['deleteID'])) {
 $id = (int) $_GET['deleteID'];
 $from = $_GET['from'] ?? '';
 $session_role = $_SESSION['role'] ?? '';
+if (empty($_SESSION['logged_in']) || !isManagementRole((string) $session_role)) {
+  http_response_code(403);
+  exit('Forbidden');
+}
 if(!empty($_GET['urlID'])){
     $url = $_GET['urlID'];
 }
@@ -21,7 +25,13 @@ if($from == 'category'){
 
 if($from == 'projectComments'){
 
-  if (!in_array($session_role, ['admin', 'super_admin'], true)) {
+  if (!isManagementRole($session_role)) {
+    http_response_code(403);
+    exit('Forbidden');
+  }
+  $commentProject = mysqli_query($con, "SELECT project_id FROM project_comments WHERE comment_id = $id");
+  $comment = $commentProject ? mysqli_fetch_assoc($commentProject) : null;
+  if (!$comment || !canAccessProject($con, (int) $comment['project_id'], (string) $session_role, (int) $_SESSION['user_id'])) {
     http_response_code(403);
     exit('Forbidden');
   }
@@ -33,7 +43,15 @@ if($from == 'projectComments'){
 
 if($from == 'taskComments'){
 
-  if (!in_array($session_role, ['admin', 'super_admin'], true)) {
+  if (!isManagementRole($session_role)) {
+    http_response_code(403);
+    exit('Forbidden');
+  }
+  $commentProject = mysqli_query($con, "SELECT projects_task.project_id FROM task_comments
+    INNER JOIN projects_task ON projects_task.task_id = task_comments.task_id
+    WHERE task_comments.comment_id = $id");
+  $comment = $commentProject ? mysqli_fetch_assoc($commentProject) : null;
+  if (!$comment || !canAccessProject($con, (int) $comment['project_id'], (string) $session_role, (int) $_SESSION['user_id'])) {
     http_response_code(403);
     exit('Forbidden');
   }
@@ -45,12 +63,16 @@ if($from == 'taskComments'){
 
 if($from == 'files'){
 
-if (!in_array($session_role, ['admin', 'super_admin'], true)) {
+if (!isManagementRole($session_role)) {
   http_response_code(403);
   exit('Forbidden');
 }
 
 $project_id = (int) ($_GET['project_id'] ?? 0);
+if (!canAccessProject($con, $project_id, (string) $session_role, (int) $_SESSION['user_id'])) {
+  http_response_code(403);
+  exit('Forbidden');
+}
 
   $qpfiles = "SELECT * FROM projects WHERE project_id = $project_id";
 $rpfiles = mysqli_query($con, $qpfiles);
@@ -90,7 +112,11 @@ $result = mysqli_query($con, $sql);
 
 if($from == 'projects'){
 
-  if (!in_array($session_role, ['admin', 'super_admin'], true)) {
+  if (!isManagementRole($session_role)) {
+    http_response_code(403);
+    exit('Forbidden');
+  }
+  if (!canAccessProject($con, $id, (string) $session_role, (int) $_SESSION['user_id'])) {
     http_response_code(403);
     exit('Forbidden');
   }

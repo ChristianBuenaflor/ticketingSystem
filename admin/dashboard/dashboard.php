@@ -3,7 +3,7 @@ include("../../includes/connections.php");
 session_start();
 
 if (!empty($_SESSION['logged_in'])) {
-  if($_SESSION['role'] != 'super_admin'){
+  if(!isManagementRole((string) ($_SESSION['role'] ?? ''))){
     header("location:../../user/dashboard/dashboard.php");
     exit;
   }
@@ -17,17 +17,20 @@ $user_role = $_SESSION['role'];
 $dashboardLinks = [
   'projects' => '../projects/list.php',
   'tickets' => '../tickets/list.php',
-  'clients' => '../users/list.php',
-  'technicians' => '../users/list.php',
-  'admins' => '../users/list.php',
+  'clerk' => '../users/list.php?list=clerk',
+  'admin' => '../users/list.php?list=admin',
+  'director' => '../users/list.php?list=director',
+  'head' => '../users/list.php?list=head',
+  'admins' => '../users/list.php?list=admin',
   'categories' => '../../user/settings/ticket-category.php',
 ];
 
 $counts = [
   'projects' => 'SELECT COUNT(*) AS total FROM projects',
   'tickets' => 'SELECT COUNT(*) AS total FROM tickets',
-  'clients' => "SELECT COUNT(*) AS total FROM users WHERE role = 'client'",
-  'technicians' => "SELECT COUNT(*) AS total FROM users WHERE role = 'technician'",
+  'clerk' => "SELECT COUNT(*) AS total FROM users WHERE role = 'clerk'",
+  'director' => "SELECT COUNT(*) AS total FROM users WHERE role = 'director'",
+  'head' => "SELECT COUNT(*) AS total FROM users WHERE role = 'head'",
   'admins' => "SELECT COUNT(*) AS total FROM users WHERE role = 'admin'",
 ];
 $dashboardCounts = [];

@@ -1,6 +1,6 @@
 <?php
 $taskTotal = array_sum($taskStatusCounts);
-$isAdminDashboard = in_array($user_role, ['admin', 'super_admin'], true);
+$isAdminDashboard = isManagementRole($user_role);
 ?>
 <section class="admin-dashboard" aria-labelledby="dashboardHeading">
   <header class="dashboard-welcome">
@@ -26,23 +26,29 @@ $isAdminDashboard = in_array($user_role, ['admin', 'super_admin'], true);
       <span class="metric-icon"><i class="ri-customer-service-2-line" aria-hidden="true"></i></span>
       <span class="metric-label"><?= $isAdminDashboard ? 'All tickets' : 'My tickets' ?></span>
       <strong><?= number_format($dashboardCounts['tickets']) ?></strong>
-      <span class="metric-caption"><?= $isAdminDashboard ? 'Support requests received' : ($user_role === 'technician' ? 'Assigned to you' : 'Submitted by you') ?></span>
+      <span class="metric-caption"><?= $isAdminDashboard ? 'Support requests received' : 'Owned or assigned to you' ?></span>
     </a>
     <?php if ($isAdminDashboard) { ?>
-      <a class="dashboard-metric metric-clients" href="<?= htmlspecialchars($dashboardLinks['clients'], ENT_QUOTES, 'UTF-8') ?>">
+      <a class="dashboard-metric metric-clients" href="<?= htmlspecialchars($dashboardLinks['clerk'], ENT_QUOTES, 'UTF-8') ?>">
         <span class="metric-icon"><i class="ri-group-line" aria-hidden="true"></i></span>
-        <span class="metric-label">Clients</span>
-        <strong><?= number_format($dashboardCounts['clients']) ?></strong>
+        <span class="metric-label">Clerks</span>
+        <strong><?= number_format($dashboardCounts['clerk']) ?></strong>
         <span class="metric-caption">Registered accounts</span>
       </a>
-      <a class="dashboard-metric metric-team" href="<?= htmlspecialchars($dashboardLinks['technicians'], ENT_QUOTES, 'UTF-8') ?>">
+      <a class="dashboard-metric metric-team" href="<?= htmlspecialchars($dashboardLinks['director'], ENT_QUOTES, 'UTF-8') ?>">
         <span class="metric-icon"><i class="ri-user-settings-line" aria-hidden="true"></i></span>
-        <span class="metric-label">Technicians</span>
-        <strong><?= number_format($dashboardCounts['technicians']) ?></strong>
-        <span class="metric-caption">Support team members</span>
+        <span class="metric-label">Directors</span>
+        <strong><?= number_format($dashboardCounts['director']) ?></strong>
+        <span class="metric-caption">Full-access accounts</span>
+      </a>
+      <a class="dashboard-metric metric-team" href="<?= htmlspecialchars($dashboardLinks['head'], ENT_QUOTES, 'UTF-8') ?>">
+        <span class="metric-icon"><i class="ri-user-settings-line" aria-hidden="true"></i></span>
+        <span class="metric-label">Heads</span>
+        <strong><?= number_format($dashboardCounts['head']) ?></strong>
+        <span class="metric-caption">Full-access accounts</span>
       </a>
     <?php } ?>
-    <?php if ($user_role === 'super_admin') { ?>
+    <?php if ($isAdminDashboard) { ?>
       <a class="dashboard-metric metric-admins" href="<?= htmlspecialchars($dashboardLinks['admins'], ENT_QUOTES, 'UTF-8') ?>">
         <span class="metric-icon"><i class="ri-admin-line" aria-hidden="true"></i></span>
         <span class="metric-label">Admins</span>
@@ -85,13 +91,12 @@ $isAdminDashboard = in_array($user_role, ['admin', 'super_admin'], true);
         <a href="<?= htmlspecialchars($dashboardLinks['projects'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-folder-3-line" aria-hidden="true"></i><span>Projects</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
         <a href="<?= htmlspecialchars($dashboardLinks['tickets'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-customer-service-2-line" aria-hidden="true"></i><span>Tickets</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
         <?php if ($isAdminDashboard) { ?>
-          <a href="<?= htmlspecialchars($dashboardLinks['clients'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-group-line" aria-hidden="true"></i><span>Clients</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
-          <a href="<?= htmlspecialchars($dashboardLinks['technicians'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-user-settings-line" aria-hidden="true"></i><span>Technicians</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
+          <a href="<?= htmlspecialchars($dashboardLinks['clerk'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-group-line" aria-hidden="true"></i><span>Clerks</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
+          <a href="<?= htmlspecialchars($dashboardLinks['admin'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-admin-line" aria-hidden="true"></i><span>Admins</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
+          <a href="<?= htmlspecialchars($dashboardLinks['director'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-user-settings-line" aria-hidden="true"></i><span>Directors</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
+          <a href="<?= htmlspecialchars($dashboardLinks['head'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-user-settings-line" aria-hidden="true"></i><span>Heads</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
         <?php } ?>
-        <?php if ($user_role === 'super_admin') { ?>
-          <a href="<?= htmlspecialchars($dashboardLinks['admins'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-admin-line" aria-hidden="true"></i><span>Admins</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
-        <?php } ?>
-        <?php if ($user_role === 'admin' || $user_role === 'super_admin') { ?>
+        <?php if ($isAdminDashboard) { ?>
           <a href="<?= htmlspecialchars($dashboardLinks['categories'], ENT_QUOTES, 'UTF-8') ?>"><i class="ri-settings-3-line" aria-hidden="true"></i><span>Ticket categories</span><i class="ri-arrow-right-line quick-arrow" aria-hidden="true"></i></a>
         <?php } ?>
         <?php if (!$isAdminDashboard) { ?>

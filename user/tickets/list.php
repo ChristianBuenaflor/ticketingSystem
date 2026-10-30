@@ -9,13 +9,13 @@ $csrf_token = $_SESSION['csrf_token'];
 
 if (!empty($_SESSION['logged_in'])) {
   $user_id = $_SESSION['user_id'];
-  $user_role = $_SESSION['role'];
+  $user_role = normalizeUserRole((string) $_SESSION['role']);
 
   // Add verification check (NEW CODE)
   $verify_query = mysqli_query($con, "SELECT verified FROM users WHERE user_id = '$user_id'");
   if ($verify_query && mysqli_num_rows($verify_query) > 0) {
     $user_data = mysqli_fetch_assoc($verify_query);
-    if ($user_data['verified'] != 1 && $user_role == 'client') {
+    if ($user_data['verified'] != 1 && $user_role == 'clerk') {
       $_SESSION['error'] = "Please verify your email before accessing the system";
       header("location:../../index.php");
       exit;
@@ -30,7 +30,7 @@ if (!empty($_SESSION['logged_in'])) {
 }
 
 $user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['role'];
+$user_role = normalizeUserRole((string) $_SESSION['role']);
 
 
 
@@ -73,33 +73,11 @@ $user_role = $_SESSION['role'];
 
 
         <div class="row mt-4 card shadow-sm">
-          <div class="card-header d-flex" style="justify-content: space-between; background-color:#a60212;<?php if ($user_role != 'client') { ?> padding-top:28px; padding-bottom:28px; <?php } ?>">
-            <?php if ($user_role == 'client'): ?>
-              <?php
-              $stmt = $con->prepare("SELECT verified FROM users WHERE user_id = ?");
-              $stmt->bind_param("i", $user_id);
-              $stmt->execute();
-              $result = $stmt->get_result();
-              $verified = $result->fetch_assoc();
-              ?>
-
-              <?php if ($verified && $verified['verified'] == 1): ?>
+          <div class="card-header d-flex" style="justify-content: space-between; background-color:#a60212;<?php if (!isManagementRole($user_role)) { ?> padding-top:28px; padding-bottom:28px; <?php } ?>">
+            <?php if (isManagementRole($user_role)): ?>
                 <button class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addTicketM">
                   <i class="ri-add-circle-fill"></i> Add Ticket
                 </button>
-              <?php else: ?>
-                <div class="d-inline-block position-relative">
-                  <button class="btn btn-add disabled">
-                    <i class="ri-add-circle-fill"></i> Add Ticket
-                  </button>
-                  <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark ms-1"
-                    data-bs-toggle="tooltip"
-                    data-bs-placement="right"
-                    title="Please verify your email to create tickets">
-                    <i class="ri-alert-line"></i> Verify First
-                  </span>
-                </div>
-              <?php endif; ?>
             <?php endif; ?>
 
           </div>
@@ -160,7 +138,7 @@ $user_role = $_SESSION['role'];
                     <th>Title</th>
                     <th>Category</th>
                     <th>Ticket Type</th>
-                    <th>Technician</th>
+                    <th>Clerk</th>
                     <th>Created<br>Last Activity</th>
                     <th>Priority</th>
                     <th>Status</th>
@@ -168,14 +146,11 @@ $user_role = $_SESSION['role'];
                 </thead>
                 <tbody>
                   <?php
-                  if ($user_role == 'client') {
-                    $query = "SELECT * FROM tickets where user_id = $user_id";
-                    $result = mysqli_query($con, $query);
-                  } else if ($user_role == 'technician') {
-                    $query = "SELECT * FROM tickets where technician = '$user_id'";
+                  if (isManagementRole($user_role)) {
+                    $query = "SELECT * FROM tickets ";
                     $result = mysqli_query($con, $query);
                   } else {
-                    $query = "SELECT * FROM tickets ";
+                    $query = "SELECT * FROM tickets WHERE user_id = $user_id OR technician = $user_id";
                     $result = mysqli_query($con, $query);
                   }
                   if (mysqli_num_rows($result) > 0) {
@@ -314,6 +289,7 @@ $user_role = $_SESSION['role'];
                           ?>
                           <span class="badge <?= $ticket_status ?>"><?= $ticket_status ?></span>
 
+                          <?php if (isManagementRole($user_role)) { ?>
                           <!-- Delete Button -->
                           <div class="btn-group dropstart" style="padding:0; position:absolute; top:0; right:12px">
                             <button type="button" class="btn" style="padding:0; border:0" data-bs-toggle="dropdown" aria-expanded="false">
@@ -325,18 +301,13 @@ $user_role = $_SESSION['role'];
                                 <li style="font-size:.7rem; padding:6px 12px;" class="dropdown-item"><i style="font-weight: 1000; color:darkorange" class="ri-file-edit-line"></i> UPDATE TICKET</li>
                               </a>
 
-                              <?php
-                              if ($user_role != 'technician') {
-                              ?>
                                 <a href="../delete.php?deleteID=<?= $ticket_id ?>&from=tickets">
                                   <li style="font-size:.7rem; padding:6px 12px;" class="dropdown-item"><i style="font-weight: 1000; color:red" class="ri-delete-bin-line"></i> DELETE</li>
                               </a>
-                              <?php
-                              }
-                              ?>
                             </ul>
                           </div>
                           <!-- Delete Button -->
+                          <?php } ?>
 
                         </td>
 
@@ -375,6 +346,7 @@ $user_role = $_SESSION['role'];
   </div>
   <!-- partial -->
 
+  <?php if (isManagementRole($user_role)): ?>
   <div class="modal fade" id="addTicketM" data-bs-backdrop="static" tabindex="-1" data-bs-keyboard="false" aria-labelledby="addTicketMLabel" aria-hidden="true">
     <div class="modal-dialog">
       <div class="modal-content">
@@ -392,9 +364,8 @@ $user_role = $_SESSION['role'];
                 <label class='form-label'>Title</label>
             </div>
             <div class="col">
-                <input <?php if ($user_role == 'technician') { echo 'disabled'; } ?> 
-                    name="ticket_title" id="ticketTitle" autocomplete="off" 
-                    placeholder="Title" class="form-inputs form-control form-control-sm focus-ring focus-ring-light" 
+                <input name="ticket_title" id="ticketTitle" autocomplete="off"
+                    placeholder="Title" class="form-inputs form-control form-control-sm focus-ring focus-ring-light"
                     type="text">
             </div>
         </div>
@@ -404,9 +375,7 @@ $user_role = $_SESSION['role'];
                 <label class='form-label'>Category</label>
               </div>
               <div class="col">
-                <select <?php if ($user_role == 'technician') {
-                          echo 'disabled';
-                        } ?> name="project" id="selectProject" class="select_project selectpicker">
+                <select name="project" id="selectProject" class="select_project selectpicker">
                   <option value="">-</option>
                   <?php
                   $query_project = "SELECT * FROM ticket_category";
@@ -415,7 +384,7 @@ $user_role = $_SESSION['role'];
                     while ($row_project = $result_project->fetch_assoc()) {
                       $expertise_id = $row_project['category_id'];
 
-                      $queryTech = "SELECT * FROM users right join users_info on users.user_id = users_info.user_id where users_info.expertise = '$expertise_id'";
+                      $queryTech = "SELECT * FROM users right join users_info on users.user_id = users_info.user_id where users.role = 'clerk' and users_info.expertise = '$expertise_id'";
                       $resultTech = mysqli_query($con, $queryTech);
                       if (mysqli_num_rows($resultTech) > 0) {
                         while ($rowTech = $resultTech->fetch_assoc()) {
@@ -430,7 +399,7 @@ $user_role = $_SESSION['role'];
                       <option <?php if ($avail != 'true') {
                                 echo 'disabled';
                               } ?> value="<?= $row_project['category_id']; ?>"><?= $row_project['category'] ?>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<?php if ($avail != 'true') {
-                                                                                                                                                                                            echo '(no technician)';
+                                                                                                                                                                                            echo '(no clerk)';
                                                                                                                                                                                           } ?></option>
                   <?php
                     }
@@ -440,21 +409,16 @@ $user_role = $_SESSION['role'];
                 </select>
               </div>
             </div>
-                      <!-- Technician Selection (only for admins/managers) -->
- <!-- Replace the existing technician dropdown with this: -->
-<?php if ($user_role != 'client'): ?>
 <div class="row mt-2">
     <div class="col-3">
-        <label class='form-label'>Technician</label>
+        <label class='form-label'>Clerk</label>
     </div>
     <div class="col">
         <select name="ticket_technician" id="selectTechnician" class="select_technician selectpicker">
-            <option value="">- Assign Technician -</option>
-            <!-- Technicians will be loaded dynamically via JavaScript -->
+            <option value="">- Assign Clerk -</option>
         </select>
     </div>
 </div>
-<?php endif; ?>
 
             <!-- -->
             <div class="row mt-2">
@@ -462,9 +426,7 @@ $user_role = $_SESSION['role'];
                 <label class='form-label'>Ticket Type</label>
               </div>
               <div class="col">
-                <select <?php if ($user_role == 'technician') {
-                          echo 'disabled';
-                        } ?> name="ticket_type" id="selectType" class="select_type selectpicker">
+                <select name="ticket_type" id="selectType" class="select_type selectpicker">
                   <?php
                   $query_project = "SELECT * FROM ticket_type";
                   $result_project = mysqli_query($con, $query_project);
@@ -486,9 +448,7 @@ $user_role = $_SESSION['role'];
                 <label class='form-label'>Description</label>
               </div>
               <div class="col">
-                <textarea <?php if ($user_role == 'technician') {
-                            echo 'disabled';
-                          } ?> class="form-control form-control-sm focus-ring focus-ring-light" name="ticket_description" id="ticketDescription" cols="30" rows="4" placeholder="Description" autocomplete="off"></textarea>
+                <textarea class="form-control form-control-sm focus-ring focus-ring-light" name="ticket_description" id="ticketDescription" cols="30" rows="4" placeholder="Description" autocomplete="off"></textarea>
               </div>
             </div>
             <!-- -->
@@ -500,15 +460,8 @@ $user_role = $_SESSION['role'];
                 <select name="ticket_status" id="selectStatus" class="select_status selectpicker">
                   <option value="">-</option>
                   <option selected value="Open">Open</option>
-                  <?php
-                  if ($user_role != 'client') {
-
-                  ?>
-                    <option value="In progress">In Progress</option>
-                    <option value="Closed">Closed</option>
-                  <?php
-                  }
-                  ?>
+                  <option value="In progress">In Progress</option>
+                  <option value="Closed">Closed</option>
                 </select>
               </div>
             </div>
@@ -526,7 +479,7 @@ $user_role = $_SESSION['role'];
             <div style="display:flex; justify-content:space-between; width:100%">
               <div>
                 <?php
-                if ($user_role == 'client') {
+                if (isManagementRole($user_role)) {
                 ?>
                   <button class="upload-file-btn btn" type="button"><i style="font-size:.9rem" class="ri-camera-fill"></i>&nbsp; Upload File</button>
                 <?php } ?>
@@ -543,6 +496,7 @@ $user_role = $_SESSION['role'];
     </div>
   </div>
 
+  <?php endif; ?>
 
 
 
@@ -606,14 +560,8 @@ $(document).on('click', '.updateTicket', function(e) {
             var res = jQuery.parseJSON(response);
 
             if (res.status == 200) {
-                // Show/hide fields based on role
-                if (<?php echo json_encode($user_role) ?> == 'client') {
-                    $('#selectStatusdiv').addClass('d-none');
-                    $('.select_technician').closest('.row').hide(); // Hide technician field for clients
-                } else {
-                    $('#selectStatusdiv').removeClass('d-none');
-                    $('.select_technician').closest('.row').show(); // Show technician field for admins/managers
-                }
+                $('#selectStatusdiv').removeClass('d-none');
+                $('.select_technician').closest('.row').show();
 
                 // Populate form fields
                 $('#m_ticketId').val(res.data.ticket_id);
@@ -633,9 +581,7 @@ $(document).on('click', '.updateTicket', function(e) {
                     $('#selectTechnician').val('').trigger('change');
                 }
                 
-                if (<?php echo json_encode($user_role) ?> != 'client') {
-                    $('#selectStatus').val(res.data.status).trigger('change');
-                }
+                $('#selectStatus').val(res.data.status).trigger('change');
 
                 $('#addTicketM').modal('show');
             }
@@ -721,7 +667,7 @@ $(document).ready(function() {
     // Function to load technicians based on selected category
     function loadTechnicians(categoryId) {
         if (!categoryId) {
-            $('#selectTechnician').empty().append('<option value="">- Assign Technician -</option>');
+            $('#selectTechnician').empty().append('<option value="">- Assign Clerk -</option>');
             return;
         }
 
@@ -731,7 +677,7 @@ $(document).ready(function() {
             success: function(response) {
                 var res = jQuery.parseJSON(response);
                 if (res.status == 200) {
-                    $('#selectTechnician').empty().append('<option value="">- Assign Technician -</option>');
+                    $('#selectTechnician').empty().append('<option value="">- Assign Clerk -</option>');
                     $.each(res.technicians, function(index, tech) {
                         $('#selectTechnician').append(
                             $('<option></option>').val(tech.user_id).text(tech.last_name + ', ' + tech.first_name)
@@ -1076,7 +1022,7 @@ $(document).ready(function() {
 
     $('.select_technician').select2({
       width: '100%',
-      placeholder: 'Technician',
+      placeholder: 'Clerk',
       dropdownParent: $("#addTicketM"),
     });
 

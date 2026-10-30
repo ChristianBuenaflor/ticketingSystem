@@ -14,6 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 }
 $user_id = (int) $_SESSION['user_id'];
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && !isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
+
 
 
 if (isset($_GET['updateid'])) {

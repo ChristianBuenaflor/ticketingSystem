@@ -3,8 +3,9 @@ include("../../includes/connections.php");
 session_start();
 
 if (!empty($_SESSION['logged_in'])) {
-    if ($_SESSION['role'] != 'super_admin') {
+    if (!isManagementRole((string) ($_SESSION['role'] ?? ''))) {
         header("location:../../user/dashboard/dashboard.php");
+        exit;
     }
 } else {
     header("location:../../index.php");
@@ -18,20 +19,24 @@ $quserP = "Select * from users where user_id = $user_id";
 $resultuserP = mysqli_query($con, $quserP);
 if (mysqli_num_rows($resultuserP) > 0) {
     while ($rowuP = $resultuserP->fetch_assoc()) {
-        $userRole = $rowuP['role'];
+        $userRole = normalizeUserRole($rowuP['role']);
     }
 }
 
 
 
-if ($userRole == 'super_admin') {
+if (isManagementRole($userRole)) {
     $userProfile = file_get_contents('images/adminpfp.png');
 }
 
 
 
 if (isset($_GET['project'])) {
-    $project_id = $_GET['project'];
+    $project_id = (int) $_GET['project'];
+    if (!canAccessProject($con, $project_id, $userRole, (int) $user_id)) {
+        header("Location: list.php");
+        exit;
+    }
     $_SESSION['project'] = $project_id;
 
     $queryx = "SELECT * FROM projects where project_id = $project_id";
@@ -569,11 +574,11 @@ if (isset($_GET['project'])) {
                 <!-- Task List -->
 
                 <div id="div-list" class="d-none row mt-4 card shadow-sm">
-                    <div class="card-header d-flex <?php if ($userRole == 'super_admin') {
+                    <div class="card-header d-flex <?php if (isManagementRole($userRole)) {
                                                         echo 'py-4';
                                                     } ?>" style="justify-content: space-between; padding: 6px 12px;">
                         <h6>Tasks</h6>
-                        <?php if ($userRole != 'super_admin') { ?>
+                        <?php if (isManagementRole($userRole)) { ?>
                             <button style="padding:6px 12px" class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addTaskM"><i class="ri-add-circle-fill"></i> Add Task</button>
                         <?php } ?>
                     </div>
@@ -688,7 +693,7 @@ if (isset($_GET['project'])) {
                                             <td class="text-center">
 
 
-                                                <?php if ($userRole != 'super_admin') { ?>
+                                                <?php if (isManagementRole($userRole)) { ?>
                                                     <button class="btn table-btn-edit updateTask" data-task-id='<?= $task_id ?>'><i class="ri-edit-box-line"></i></button>&nbsp;
                                                 <?php } ?>
                                                 <button class="btn table-btn-delete deleteTask" data-task-id='<?= $task_id ?>'><i class="ri-delete-bin-5-line"></i></button>
@@ -718,11 +723,11 @@ if (isset($_GET['project'])) {
                 <!-- Kanban List -->
 
                 <div id="div-kanban" class="d-none row mt-4 card shadow-sm">
-                    <div class="card-header d-flex <?php if ($userRole == 'super_admin') {
+                    <div class="card-header d-flex <?php if (isManagementRole($userRole)) {
                                                         echo 'py-4';
                                                     } ?>" style="justify-content: space-between; padding: 6px 12px;">
                         <h6>Tasks Kanban</h6>
-                        <?php if ($userRole != 'super_admin') { ?>
+                        <?php if (isManagementRole($userRole)) { ?>
                             <button style="padding:6px 12px" class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addTaskM"><i class="ri-add-circle-fill"></i> Add Task</button>
                         <?php } ?>
                     </div>
@@ -1057,12 +1062,12 @@ if (isset($_GET['project'])) {
 
                 <div id="div-comments" class="d-none row mt-4 card shadow-sm">
 
-                    <div class="card-body" style="position: relative;<?php if ($userRole == 'super_admin') {
+                    <div class="card-body" style="position: relative;<?php if (isManagementRole($userRole)) {
                                                                             echo ' padding-top:40px;';
                                                                         } ?>" id="project-comments-results">
 
 
-                        <?php if ($userRole != 'super_admin') { ?>
+                        <?php if (isManagementRole($userRole)) { ?>
                             <div class="d-flex gap-4 mt-3" style="padding:12px 12px;border-top:1px solid rgba(0,0,0,0.1);">
                                 <div class="d-flex gap-3" style="width: 100%;">
                                     <div>
@@ -1151,7 +1156,7 @@ if (isset($_GET['project'])) {
                                                     <span><b><?= $commenter_fname . " " . $commenter_lname ?></b></span><span><?= $comment_date ?></span>
 
                                                     <?php
-                                                    if ($user_id == $commenter_user_id || $userRole == 'super_admin') {
+                                                    if ($user_id == $commenter_user_id || isManagementRole($userRole)) {
                                                     ?>
                                                         <!-- Delete Button -->
                                                         <div class="btn-group dropstart" style="padding:0; position:absolute; top:0; right:12px">
@@ -1318,7 +1323,7 @@ if (isset($_GET['project'])) {
 
 
 
-    <?php if ($userRole != 'super_admin') { ?>
+    <?php if (isManagementRole($userRole)) { ?>
         <!-- Modal -->
 
         <div class="modal fade" id="addTaskM" data-bs-backdrop="static" tabindex="-1" data-bs-keyboard="false" aria-labelledby="addTaskMLabel" aria-hidden="true">
@@ -1461,7 +1466,7 @@ if (isset($_GET['project'])) {
                 <div class="modal-header">
                     <h1 class="modal-title"><span id="previewTaskLabel"></span>&nbsp;<a class="share-icon" href="#"><i class="ri-share-box-line"></i></a></h1>
                     <div class="d-flex align-items-center gap-2 ms-auto">
-                    <?php if ($userRole != 'super_admin') { ?>
+                    <?php if (isManagementRole($userRole)) { ?>
                         <div class="dropdown" id="taskActionsDropdown">
                             <button type="button" class="btn btn-secondary" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Task actions">
                                 <i class="ri-more-2-fill" aria-hidden="true"></i>
@@ -2383,7 +2388,7 @@ if (isset($_GET['project'])) {
                 }
 
 
-                if (comment.commenter_user_id == <?php echo json_encode($user_id) ?> || <?php echo json_encode($userRole) ?> == 'super_admin') {
+                if (comment.commenter_user_id == <?php echo json_encode($user_id) ?> || <?php echo json_encode(isManagementRole($userRole)) ?>) {
 
                     commentHtml += `
            <div style="position:absolute;top:6px;right:0;">
@@ -2737,7 +2742,7 @@ if (isset($_GET['project'])) {
                 }
 
 
-                if (comment.commenter_user_id == <?php echo json_encode($user_id) ?> || <?php echo json_encode($userRole) ?> == 'super_admin') {
+                if (comment.commenter_user_id == <?php echo json_encode($user_id) ?> || <?php echo json_encode(isManagementRole($userRole)) ?>) {
 
                     commentHtml += `
 <div style="position:absolute;top:6px;right:0;">

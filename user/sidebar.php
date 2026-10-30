@@ -21,7 +21,7 @@ $result = mysqli_query($con, $query);
 if (mysqli_num_rows($result) > 0) {
     while ($row = $result->fetch_assoc()) {
         $username = strtolower($row['email']);
-        $user_role = $row['role']; // Consistent variable name
+        $user_role = normalizeUserRole($row['role']);
     }
 }
 ?>
@@ -32,22 +32,18 @@ if (mysqli_num_rows($result) > 0) {
     <div class="sidebar-header">
       <div class="pro-sidebar-logo">
         <div>
-          <?php if ($user_role == "client") { ?>
+          <?php if ($user_role === 'clerk') { ?>
             <i class="ri-account-pin-box-line"></i>
-          <?php } elseif ($user_role == 'technician') { ?>
-            <i class="ri-user-settings-line"></i>
           <?php } else { ?>
             <i class="ri-admin-line"></i>
           <?php } ?>
         </div>
         <h5 style="line-height: .8em; margin:0; padding:0">
           <?php
-          if ($user_role == "client") {
-            echo "Client Portal";
-          } elseif ($user_role == 'technician') {
-            echo "Technician";
+          if ($user_role === 'clerk') {
+            echo "Clerk Portal";
           } else {
-            echo "Admin";
+            echo htmlspecialchars(ucfirst($user_role), ENT_QUOTES, 'UTF-8');
           }
           ?>
           <br><span style="line-height:1em;font-size:.6rem;"><?= $username ?></span>
@@ -76,11 +72,11 @@ if (mysqli_num_rows($result) > 0) {
             </a>
           </li>
           <!-- SHOW ONLY FOR ADMIN / SUPER_ADMIN -->
-          <?php if ($user_role != 'client' && $user_role != 'technician') { ?>
-            <li class="menu-item<?= sidebarLinkIsCurrent('../users/technicians.php') ? ' active' : '' ?>">
-              <a href="../users/technicians.php"<?= sidebarLinkIsCurrent('../users/technicians.php') ? ' aria-current="page"' : '' ?>>
+          <?php if (isManagementRole($user_role)) { ?>
+            <li class="menu-item<?= sidebarLinkIsCurrent('../users/list.php') ? ' active' : '' ?>">
+                <a href="../users/list.php?list=clerk"<?= sidebarLinkIsCurrent('../users/list.php') ? ' aria-current="page"' : '' ?>>
                 <span class="menu-icon"><i class="ri-user-settings-line"></i></span>
-                <span class="menu-title">Technicians</span>
+                  <span class="menu-title">Clerks</span>
               </a>
             </li>
 
@@ -93,14 +89,19 @@ if (mysqli_num_rows($result) > 0) {
               </a>
               <div class="sub-menu-list">
                 <ul>
-                  <li class="menu-item<?= sidebarLinkIsCurrent('../users/clients.php') ? ' active' : '' ?>">
-                    <a href="../users/clients.php"<?= sidebarLinkIsCurrent('../users/clients.php') ? ' aria-current="page"' : '' ?>>
-                      <span class="menu-title"><span class="menu-icon"><i class="ri-account-pin-circle-line"></i></span>&nbsp;Clients</span>
+                  <li class="menu-item<?= sidebarLinkIsCurrent('../users/list.php') ? ' active' : '' ?>">
+                    <a href="../users/list.php?list=admin"<?= sidebarLinkIsCurrent('../users/list.php') ? ' aria-current="page"' : '' ?>>
+                      <span class="menu-title"><span class="menu-icon"><i class="ri-account-pin-circle-line"></i></span>&nbsp;Admins</span>
                     </a>
                   </li>
-                  <li class="menu-item<?= sidebarLinkIsCurrent('../users/admins.php') ? ' active' : '' ?>">
-                    <a href="../users/admins.php"<?= sidebarLinkIsCurrent('../users/admins.php') ? ' aria-current="page"' : '' ?>>
-                      <span class="menu-title"><span class="menu-icon"><i class="ri-admin-line"></i></span>&nbsp;Admins</span>
+                  <li class="menu-item<?= sidebarLinkIsCurrent('../users/list.php') ? ' active' : '' ?>">
+                    <a href="../users/list.php?list=director"<?= sidebarLinkIsCurrent('../users/list.php') ? ' aria-current="page"' : '' ?>>
+                      <span class="menu-title"><span class="menu-icon"><i class="ri-admin-line"></i></span>&nbsp;Directors</span>
+                    </a>
+                  </li>
+                  <li class="menu-item<?= sidebarLinkIsCurrent('../users/list.php') ? ' active' : '' ?>">
+                    <a href="../users/list.php?list=head"<?= sidebarLinkIsCurrent('../users/list.php') ? ' aria-current="page"' : '' ?>>
+                      <span class="menu-title"><span class="menu-icon"><i class="ri-admin-line"></i></span>&nbsp;Heads</span>
                     </a>
                   </li>
                   <li class="menu-item<?= sidebarLinkIsCurrent('../users/list.php') ? ' active' : '' ?>">
@@ -132,7 +133,7 @@ if (mysqli_num_rows($result) > 0) {
             </a>
             <div class="sub-menu-list">
               <ul>
-                <?php if ($user_role != 'super_admin') { ?>
+                <?php if (isManagementRole($user_role)) { ?>
                   <li class="menu-item<?= sidebarLinkIsCurrent('../settings/my-profile.php') ? ' active' : '' ?>">
                     <a href="../settings/my-profile.php"<?= sidebarLinkIsCurrent('../settings/my-profile.php') ? ' aria-current="page"' : '' ?>>
                       <span class="menu-icon">
@@ -143,7 +144,7 @@ if (mysqli_num_rows($result) > 0) {
                   </li>
                 <?php } ?>
 
-                <?php if ($user_role == 'admin' || $user_role == 'super_admin') { ?>
+                <?php if (isManagementRole($user_role)) { ?>
                   <li class="menu-item<?= sidebarLinkIsCurrent('../settings/ticket-category.php') ? ' active' : '' ?>">
                     <a href="../settings/ticket-category.php"<?= sidebarLinkIsCurrent('../settings/ticket-category.php') ? ' aria-current="page"' : '' ?>>
                       <span class="menu-icon">

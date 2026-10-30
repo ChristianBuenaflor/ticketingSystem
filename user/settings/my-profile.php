@@ -8,8 +8,9 @@ if (empty($_SESSION['csrf_token'])) {
 $csrf_token = $_SESSION['csrf_token'];
 
 if (!empty($_SESSION['logged_in'])) {
-    if ($_SESSION['role'] == 'super_admin') {
-        header("location:../../user/dashboard/dashboard.php");
+    if (!isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+        header("location:../dashboard/dashboard.php");
+        exit;
     }
 } else {
     header("location:../../index.php");

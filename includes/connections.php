@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/role_permissions.php';
+
 $dbhost = "localhost";
 $dbuser = "root";
 $dbpass = "";

@@ -3,8 +3,9 @@ include("../../includes/connections.php");
 session_start();
 
 if (!empty($_SESSION['logged_in'])) {
-  if($_SESSION['role'] != 'super_admin'){
+  if(!isManagementRole((string) ($_SESSION['role'] ?? ''))){
     header("location:../../user/dashboard/dashboard.php");
+    exit;
   }
 } else {
     header("location:../../index.php");
@@ -13,6 +14,7 @@ if (!empty($_SESSION['logged_in'])) {
 
 
 $user_id = $_SESSION['user_id'];
+$userRole = normalizeUserRole((string) $_SESSION['role']);
 
 
 ?>
@@ -114,8 +116,15 @@ $user_id = $_SESSION['user_id'];
               </thead>
               <tbody>
                 <?php
-                $query = "SELECT * FROM projects";
-                $result = mysqli_query($con, $query);
+                $visibleProjectIds = getAccessibleProjectIds($con, $userRole, (int) $user_id);
+                if ($visibleProjectIds === false) {
+                    throw new RuntimeException('Unable to load visible projects.');
+                }
+                $projectIdList = $visibleProjectIds ? implode(',', $visibleProjectIds) : '0';
+                $result = mysqli_query($con, "SELECT * FROM projects WHERE project_id IN ($projectIdList)");
+                if (!$result) {
+                    throw new RuntimeException('Unable to load visible projects.');
+                }
                 if (mysqli_num_rows($result) > 0) {
                   while ($row = $result->fetch_assoc()) {
                     $project_id = $row['project_id'];
@@ -156,7 +165,7 @@ $user_id = $_SESSION['user_id'];
                 ?>
                     <tr>
                       <td class="td<?= $project_id ?>" style="width: 30px;"><?= $project_id ?></td>
-                      <td class="td<?= $project_id ?>"><a href="view.php?project=<?= $project_id ?>"><?= $project_title ?></a></td>
+                      <td class="td<?= $project_id ?>"><a href="../../user/projects/view.php?project=<?= $project_id ?>"><?= $project_title ?></a></td>
                       <td class="td<?= $project_id ?>" style="width: 150px;"><?= $start_date ?></td>
                       <td class="td<?= $project_id ?>" style="width: 150px;"><?= $deadline ?></td>
                       <td title="<?=  number_format($avarageProgress, 0) . "%" ?>" class="td<?= $project_id ?>" style="width: 300px;">

@@ -1,5 +1,11 @@
 <?php
 include("../../includes/connections.php");
+session_start();
+
+if (empty($_SESSION['logged_in']) || !isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
 
 if (isset($_GET['moveTicket'])) {
   $id = $_GET['moveTicket'];
@@ -67,30 +73,14 @@ if (isset($_POST['add-user'])) {
   $email_address = mysqli_real_escape_string($con, $_POST['email_address']);
   $phone = mysqli_real_escape_string($con, $_POST['phone']);
   $user_type = mysqli_real_escape_string($con, $_POST['user_type']);
-
-if ($user_type == 'technician') {
-  $expertise_arr = $_POST['expertise'] ?? [];
-
-  if (empty($expertise_arr)) {
-    $res = ['status' => 104]; // No expertise selected
-    echo json_encode($res);
+  if (!in_array($user_type, ['admin', 'director', 'head', 'clerk'], true)) {
+    http_response_code(400);
+    echo json_encode(['status' => 101]);
     return;
   }
+  $expertise = '';
 
-  // Sanitize IDs (assuming they are integers)
-  $expertise_arr = array_map('intval', $expertise_arr);
-
-  // Convert to CSV string (e.g., "1,3,4")
-  $expertise = implode(',', $expertise_arr);
-}
-
-
-
-
-
-
-
-  $queryEChek = "Select * from users where email = '$email_address'";
+$queryEChek = "Select * from users where email = '$email_address'";
   $resultEChek = mysqli_query($con, $queryEChek);
 
 
@@ -121,21 +111,6 @@ if ($user_type == 'technician') {
     echo json_encode($res);
     return;
   }
-
-  if ($user_type == 'technician') {
-    if (empty($expertise)) {
-      $res = [
-        'status' => 104,
-      ];
-      echo json_encode($res);
-      return;
-    }
-  }
-
-
-
-
-
 
   $c = 5;
   function getChar($c)

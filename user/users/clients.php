@@ -14,13 +14,18 @@ if (!empty($_SESSION['logged_in'])) {
   die;
 }
 
+if (!isManagementRole((string) ($_SESSION['role'] ?? ''))) {
+  http_response_code(403);
+  exit('Forbidden.');
+}
+
 $user_id = $_SESSION['user_id'];
 
 $quserP = "Select * from users where user_id = $user_id";
 $resultuserP = mysqli_query($con, $quserP);
 if (mysqli_num_rows($resultuserP) > 0) {
   while ($rowuP = $resultuserP->fetch_assoc()) {
-    $userRole = $rowuP['role'];
+    $userRole = normalizeUserRole($rowuP['role']);
   }
 }
 
@@ -32,7 +37,7 @@ if (mysqli_num_rows($resultuserP) > 0) {
 
 <head>
   <meta charset="UTF-8">
-  <title>User - Clients</title>
+  <title>User - Clerks</title>
   <?php include("../header.php") ?>
   <style>
     .dropdown-menu {
@@ -87,11 +92,11 @@ if (mysqli_num_rows($resultuserP) > 0) {
 
 
         <div class="row mt-4 card shadow-sm">
-          <div class="card-header d-flex" style="justify-content: space-between; background-color:#a60212;<?php if ($userRole == 'client' || $userRole == 'technician') {
+          <div class="card-header d-flex" style="justify-content: space-between; background-color:#a60212;<?php if (!isManagementRole($userRole)) {
                                                                                     echo ' padding-top:28px; padding-bottom:28px;';
                                                                                   } ?>">
-            <h6 style="color:#ffffff;">Clients</h6>
-            <?php if ($userRole == 'admin' || $userRole == 'super_admin') { ?>
+            <h6 style="color:#ffffff;">Clerks</h6>
+            <?php if (isManagementRole($userRole)) { ?>
               <button class="btn btn-add" data-bs-toggle="modal" data-bs-target="#addUserM"><i class="ri-add-circle-fill"></i> Add User</button>
             <?php } ?>
           </div>
@@ -114,7 +119,7 @@ if (mysqli_num_rows($resultuserP) > 0) {
               <tbody>
                 <?php
 
-                $query = "SELECT * FROM users where role = 'client'";
+                $query = "SELECT * FROM users where role = 'clerk'";
                 $result = mysqli_query($con, $query);
 
                 if (mysqli_num_rows($result) > 0) {
@@ -153,7 +158,7 @@ if (mysqli_num_rows($resultuserP) > 0) {
                             } else { ?><?= $skype ?><?php } ?></td>
                         <td class="position-relative"><?= $roles ?>
                           <?php
-                          if ($userRole == 'admin' || $userRole == 'super_admin') {
+                          if (isManagementRole($userRole)) {
                           ?>
                             <!-- Delete Button -->
                             <div class="btn-group dropstart" style="padding:0; position:absolute; top:20px; right:12px">
@@ -259,9 +264,10 @@ if (mysqli_num_rows($resultuserP) > 0) {
               <div class="col">
                 <select name="user_type" id="user_type" class="select_userType selectpicker">
                   <option value="">-</option>
-                  <option selected value="client">Client</option>
-                  <option value="technician">Technician</option>
                   <option value="admin">Admin</option>
+                  <option value="director">Director</option>
+                  <option value="head">Head</option>
+                  <option selected value="clerk">Clerk</option>
                 </select>
               </div>
             </div>
@@ -305,7 +311,7 @@ if (mysqli_num_rows($resultuserP) > 0) {
                 <span id="select-userType" class="alert alert-warning d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> Please select user type</span>
                 <span id="invalid-email" class="alert alert-danger d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> Invalid email address!</span>
                 <span id="existed-email" class="alert alert-danger d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> User with the email address already exist.</span>
-                <span id="invalid-expertise" class="alert alert-danger d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> Select technician expertise!</span>
+                <span id="invalid-expertise" class="alert alert-danger d-none" style="padding:0px 6px; font-size:.7rem; border-radius:0"><i class="ri-error-warning-fill"></i> Select Clerk expertise!</span>
 
               </div>
               <div>
@@ -349,7 +355,7 @@ if (mysqli_num_rows($resultuserP) > 0) {
 <script>
   $(document).ready(function() {
     function toggleExpertiseRow() {
-      if ($('#user_type').val() === 'technician') {
+      if ($('#user_type').val() === 'clerk') {
         $('.expertise-row').removeClass('d-none');
       } else {
         $('.expertise-row').addClass('d-none');
